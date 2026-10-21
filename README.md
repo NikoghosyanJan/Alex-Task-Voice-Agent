@@ -159,7 +159,7 @@ Everything runs on free tiers. The only paid part is OpenAI usage, which comes t
 2. **Upstash:** create a free Redis database (on [upstash.com](https://upstash.com) or via the Vercel Marketplace). Copy the **TCP** URL (`rediss://default:<password>@<host>.upstash.io:6379`) to `REDIS_URL`.
 3. **GitHub:** push this repository.
 4. **Vercel:** _Add New Project_, import the repo, then:
-   - **Root Directory:** leave it at the repository root. The root `vercel.json` defines the `web` service (`apps/web`, build command `pnpm run vercel-build`: Prisma generate, migrate deploy, then next build), the `worker` daemon (`apps/worker/Dockerfile`), the public rewrite and the daily drain cron.
+   - **Root Directory:** leave it at the repository root. The root `vercel.json` defines the `web` service (`apps/web`, build command `pnpm run vercel-build`: Prisma generate, migrate deploy, then next build), the `worker` daemon (`Dockerfile.worker` at the repo root, since Vercel uses the Dockerfile's directory as the build context), the public rewrite and the daily drain cron.
    - **Environment variables:** everything from the table above, with `APP_URL=https://<project>.vercel.app` (your production domain). Set `WORKER_MODE=standalone` for **Production** (the `worker` daemon consumes the queues) and `WORKER_MODE=serverless` for **Preview** (daemons only run in production, so previews use the drain endpoint).
    - Deploy.
 5. **Webhook:** from your machine, with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env`:

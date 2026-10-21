@@ -10,7 +10,7 @@
   "daemons": {
     "worker": {
       "root": ".",
-      "entrypoint": "apps/worker/Dockerfile",
+      "entrypoint": "Dockerfile.worker",
       "instances": { "cle1": 1 },
       "terminationGracePeriodSeconds": 35
     }
