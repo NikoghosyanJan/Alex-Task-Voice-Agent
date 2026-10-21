@@ -64,8 +64,8 @@ The pipeline is split into three queues on purpose. A failed GPT call retries on
 
 The same processors (`packages/jobs`) run in two modes, selected by `WORKER_MODE`:
 
-- **`standalone`** (docker-compose): `apps/worker` is a long-running BullMQ `Worker` with per-queue concurrency and graceful shutdown on SIGTERM.
-- **`serverless`** (Vercel): no always-on process exists. After enqueueing, the webhook (or API) uses `after()` to POST to `/api/worker/drain` with a shared secret. The drain runs in its own invocation:
+- **`standalone`** (docker-compose, Vercel production as the `worker` daemon): `apps/worker` is a long-running BullMQ `Worker` with per-queue concurrency and graceful shutdown on SIGTERM.
+- **`serverless`** (Vercel previews, or production without the daemon): no always-on process exists. After enqueueing, the webhook (or API) uses `after()` to POST to `/api/worker/drain` with a shared secret. The drain runs in its own invocation:
   - It takes `worker:drain:lock`, then fetches jobs manually with BullMQ (`worker.getNextJob(token)`) across up to 3 parallel lanes, and settles each one with `moveToCompleted` / `moveToFailed`. BullMQ's attempts and backoff policy still applies.
   - Retries use short backoff (1s, 2s), so they finish inside the same drain run. A lane keeps waiting while another lane's job may enqueue the next stage, so a voice note goes through all three stages in one run.
   - It stops when the queues are empty or after 60s. After releasing the lock it re-checks the queues to close the enqueue/release race.
@@ -92,7 +92,7 @@ Serverless mode keeps the live deployment free (no paid always-on host). It also
 ```
 apps/
   web/        Next.js dashboard + API: webhook, tasks, SSE, drain, health
-  worker/     Standalone BullMQ worker (docker-compose)
+  worker/     Standalone BullMQ worker (docker-compose, Vercel daemon)
 packages/
   db/         Prisma schema, migrations, client
   shared/     env, logger, Redis, queues + zod job schemas, Telegram client, OpenAI helpers, errors, events
@@ -144,7 +144,7 @@ pnpm dev:worker              # worker
 | `DIRECT_URL`                                    | Neon **direct** connection string (migrations)                            |
 | `REDIS_URL`                                     | `redis://...` locally, `rediss://...` for Upstash (TLS)                   |
 | `APP_URL`                                       | Public base URL (production Vercel domain when deployed)                  |
-| `WORKER_MODE`                                   | `standalone` (docker) or `serverless` (Vercel)                            |
+| `WORKER_MODE`                                   | `standalone` (docker, Vercel production) or `serverless` (Vercel preview) |
 | `WORKER_SECRET`                                 | Shared secret for `/api/worker/drain`                                     |
 | `CRON_SECRET`                                   | Vercel Cron bearer token for the daily drain                              |
 | `APP_TIMEZONE`                                  | IANA timezone for resolving relative due dates, e.g. `Asia/Yerevan`       |
@@ -159,15 +159,15 @@ Everything runs on free tiers. The only paid part is OpenAI usage, which comes t
 2. **Upstash:** create a free Redis database (on [upstash.com](https://upstash.com) or via the Vercel Marketplace). Copy the **TCP** URL (`rediss://default:<password>@<host>.upstash.io:6379`) to `REDIS_URL`.
 3. **GitHub:** push this repository.
 4. **Vercel:** _Add New Project_, import the repo, then:
-   - **Root Directory:** `apps/web`. Vercel detects the pnpm workspace and uses `apps/web/vercel.json`: build command `pnpm run vercel-build` (Prisma generate, migrate deploy, then next build) plus the daily drain cron.
-   - **Environment variables:** everything from the table above, with `WORKER_MODE=serverless` and `APP_URL=https://<project>.vercel.app` (your production domain).
+   - **Root Directory:** leave it at the repository root. The root `vercel.json` defines the `web` service (`apps/web`, build command `pnpm run vercel-build`: Prisma generate, migrate deploy, then next build), the `worker` daemon (`apps/worker/Dockerfile`), the public rewrite and the daily drain cron.
+   - **Environment variables:** everything from the table above, with `APP_URL=https://<project>.vercel.app` (your production domain). Set `WORKER_MODE=standalone` for **Production** (the `worker` daemon consumes the queues) and `WORKER_MODE=serverless` for **Preview** (daemons only run in production, so previews use the drain endpoint).
    - Deploy.
 5. **Webhook:** from your machine, with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` in `.env`:
    ```bash
    pnpm set-webhook https://<project>.vercel.app
    ```
    Use the production domain. Vercel Deployment Protection covers preview URLs, which Telegram can't reach.
-6. **Smoke test:** open `https://<project>.vercel.app/api/health` (expect `"ok": true`, `"workerMode": "serverless"`). Then send the bot a text and a voice message and watch both appear live on the dashboard. Press **Done** in Telegram and toggle a status on the dashboard; both sides stay in sync.
+6. **Smoke test:** open `https://<project>.vercel.app/api/health` (expect `"ok": true`, `"workerMode": "standalone"`) and check that the `worker` daemon logs `worker started`. Then send the bot a text and a voice message and watch both appear live on the dashboard. Press **Done** in Telegram and toggle a status on the dashboard; both sides stay in sync.
 
 ## Scripts
 

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": "apps/web",
+      "framework": "nextjs",
+      "buildCommand": "pnpm run vercel-build"
+    }
+  },
+  "daemons": {
+    "worker": {
+      "root": ".",
+      "entrypoint": "apps/worker/Dockerfile",
+      "instances": { "cle1": 1 },
+      "terminationGracePeriodSeconds": 35
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": { "service": "web" } }],
+  "crons": [{ "path": "/api/worker/drain", "schedule": "0 4 * * *" }]
+}
