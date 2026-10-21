@@ -1,0 +1,62 @@
+name: taskbot
+
+# PostgreSQL is hosted on Neon (DATABASE_URL / DIRECT_URL in .env), so it is not a service here.
+
+x-app: &app
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: migrate
+    env_file: .env
+    restart: "no"
+
+  web:
+    <<: *app
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      WORKER_MODE: standalone
+      SERVICE_NAME: web
+    ports:
+      - "3000:3000"
+
+  worker:
+    <<: *app
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: runner
+    environment:
+      REDIS_URL: redis://redis:6379
+      WORKER_MODE: standalone
+      SERVICE_NAME: worker
+    stop_grace_period: 35s
+
+volumes:
+  redis-data:

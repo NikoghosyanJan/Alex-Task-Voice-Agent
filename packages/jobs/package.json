@@ -1,0 +1,22 @@
+{
+  "name": "@taskbot/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@taskbot/db": "workspace:*",
+    "@taskbot/shared": "workspace:*",
+    "bullmq": "^5.61.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "typescript": "~5.9.3"
+  }
+}

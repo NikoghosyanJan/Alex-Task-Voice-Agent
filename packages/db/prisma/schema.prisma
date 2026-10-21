@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskSource {
+  TEXT
+  VOICE
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId BigInt   @unique
+  chatId     BigInt
+  username   String?
+  firstName  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tasks      Task[]
+
+  @@map("users")
+}
+
+model Task {
+  id               String     @id @default(cuid())
+  title            String
+  description      String?
+  status           TaskStatus @default(PENDING)
+  priority         Priority   @default(MEDIUM)
+  dueDate          DateTime?
+  source           TaskSource
+  originalText     String
+  transcript       String?
+  /// Telegram update that created the task; makes job retries idempotent
+  telegramUpdateId BigInt?    @unique
+  /// Message id of the task card in the user's chat, kept in sync on status changes
+  cardMessageId    Int?
+  userId           String
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId])
+  @@map("tasks")
+}

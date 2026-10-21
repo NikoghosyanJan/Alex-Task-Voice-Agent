@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+**/.vercel
+**/coverage
+packages/db/src/generated
+.git
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
