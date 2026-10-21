@@ -1,4 +1,5 @@
 import {
+  formatTaskNumber,
   PRIORITY_LABELS,
   STATUS_LABELS,
   TASK_STATUSES,
@@ -9,6 +10,7 @@ import {
   type TaskStatusValue,
   type TelegramClient,
 } from "@taskbot/shared";
+import type { PendingAction } from "../actions/pendingActions";
 
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -61,7 +63,11 @@ export function formatTaskCard(
   task: TaskDTO,
   { header, timeZone }: { header: string; timeZone: string },
 ): string {
-  const lines = [`<b>${escapeHtml(header)}</b>`, "", `<b>${escapeHtml(task.title)}</b>`];
+  const lines = [
+    `<b>${escapeHtml(header)}</b>`,
+    "",
+    `<b>${formatTaskNumber(task.number)} · ${escapeHtml(task.title)}</b>`,
+  ];
   if (task.description) lines.push(escapeHtml(task.description));
   lines.push("");
   lines.push(`Status: ${STATUS_LABELS[task.status]}`);
@@ -89,15 +95,97 @@ export function taskKeyboard(task: TaskDTO, appUrl: string): InlineKeyboardMarku
   return { inline_keyboard: rows };
 }
 
+/** "ac:<actionId>:y" confirms, "ac:<actionId>:n" cancels. */
+export function actionCallbackData(actionId: string, confirmed: boolean): string {
+  return `ac:${actionId}:${confirmed ? "y" : "n"}`;
+}
+
+export function parseActionCallback(
+  data: string | undefined,
+): { actionId: string; confirmed: boolean } | null {
+  const match = /^ac:([\w-]+):([yn])$/.exec(data ?? "");
+  return match && match[1] ? { actionId: match[1], confirmed: match[2] === "y" } : null;
+}
+
+export function proposalKeyboard(actionId: string): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Confirm", callback_data: actionCallbackData(actionId, true) },
+        { text: "Cancel", callback_data: actionCallbackData(actionId, false) },
+      ],
+    ],
+  };
+}
+
+export const PROPOSAL_HEADERS = {
+  pending: "Here's what I'm planning to do. Confirm?",
+  cancelled: "Cancelled. Nothing was changed.",
+  expired: "This request expired. Nothing was changed.",
+} as const;
+
+function dueOrNone(iso: string | null | undefined, timeZone: string): string {
+  return escapeHtml(formatDueDate(iso ?? null, timeZone) ?? "none");
+}
+
+export function formatProposal(
+  action: PendingAction,
+  { header, timeZone }: { header: string; timeZone: string },
+): string {
+  const lines = [`<b>${escapeHtml(header)}</b>`, ""];
+
+  if (action.kind === "create") {
+    const { task } = action;
+    lines.push("Create a new task:", `<b>${escapeHtml(task.title)}</b>`);
+    if (task.description) lines.push(escapeHtml(task.description));
+    lines.push("", `Priority: ${PRIORITY_LABELS[task.priority]}`);
+    const due = formatDueDate(task.dueDate, timeZone);
+    if (due) lines.push(`Due: ${escapeHtml(due)}`);
+  } else {
+    const { before, changes } = action;
+    lines.push(
+      `Update task <b>${formatTaskNumber(before.number)} · ${escapeHtml(before.title)}</b>:`,
+    );
+    if (changes.status) {
+      lines.push(`• Status: ${STATUS_LABELS[before.status]} → ${STATUS_LABELS[changes.status]}`);
+    }
+    if (changes.priority) {
+      lines.push(
+        `• Priority: ${PRIORITY_LABELS[before.priority]} → ${PRIORITY_LABELS[changes.priority]}`,
+      );
+    }
+    if (changes.title) {
+      lines.push(`• Title: "${escapeHtml(before.title)}" → "${escapeHtml(changes.title)}"`);
+    }
+    if (changes.description !== undefined) {
+      lines.push(
+        changes.description
+          ? `• Description: "${escapeHtml(preview(changes.description, 300))}"`
+          : "• Description: removed",
+      );
+    }
+    if (changes.dueDate !== undefined) {
+      lines.push(
+        `• Due: ${dueOrNone(before.dueDate, timeZone)} → ${dueOrNone(changes.dueDate, timeZone)}`,
+      );
+    }
+  }
+
+  if (action.transcript) {
+    lines.push("", `<i>Heard: "${escapeHtml(preview(action.transcript, 300))}"</i>`);
+  }
+  return lines.join("\n");
+}
+
 export const messages = {
-  creatingTask: () => "Got it. Creating your task...",
+  thinking: () => "Got it. Working out what to do...",
   transcribing: () => "Got it. Transcribing your voice message...",
   transcribed: (transcript: string) =>
-    `<b>Transcribed:</b>\n<i>"${escapeHtml(preview(transcript, 1_000))}"</i>\n\nCreating your task...`,
+    `<b>Transcribed:</b>\n<i>"${escapeHtml(preview(transcript, 1_000))}"</i>\n\nWorking out what to do...`,
   voiceFailed: (reason: string) =>
     `<b>Couldn't process the voice message.</b>\n${escapeHtml(reason)}\nPlease try again or send the task as text.`,
   taskFailed: (reason: string) =>
-    `<b>Couldn't create the task.</b>\n${escapeHtml(reason)}\nPlease try again in a moment.`,
+    `<b>Couldn't process your request.</b>\n${escapeHtml(reason)}\nPlease try again in a moment.`,
 };
 
 /**

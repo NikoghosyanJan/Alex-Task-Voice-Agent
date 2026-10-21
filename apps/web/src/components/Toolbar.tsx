@@ -41,7 +41,7 @@ export function Toolbar({ filters, onFiltersChange, view, onViewChange }: Props)
             type="search"
             value={filters.query}
             onChange={(event) => onFiltersChange({ ...filters, query: event.target.value })}
-            placeholder="Search tasks..."
+            placeholder="Search tasks or #number..."
             className={cn(selectClass, "w-full pl-8")}
           />
         </label>

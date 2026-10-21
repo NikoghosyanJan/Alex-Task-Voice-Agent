@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { fallbackTask, normalizeStructuredTask, TITLE_MAX } from "./taskSchema";
-import { buildSystemPrompt, describeNow } from "./structureTask";
 
 describe("normalizeStructuredTask", () => {
   it("accepts valid model output and parses the due date", () => {
@@ -64,13 +63,5 @@ describe("fallbackTask", () => {
 
   it("has no description for short single-line text", () => {
     expect(fallbackTask("  Water the plants ").description).toBeNull();
-  });
-});
-
-describe("prompt", () => {
-  it("includes the local time and UTC offset for resolving relative dates", () => {
-    const now = new Date("2026-10-21T05:00:00Z");
-    expect(describeNow(now, "Asia/Yerevan")).toContain("UTC offset +04:00");
-    expect(buildSystemPrompt(now, "Asia/Yerevan")).toContain("Wednesday, October 21, 2026");
   });
 });

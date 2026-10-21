@@ -1,7 +1,26 @@
 import { MessageSquareText, Mic } from "lucide-react";
-import { PRIORITY_LABELS, type PriorityValue, type TaskSourceValue } from "@taskbot/shared/types";
+import {
+  formatTaskNumber,
+  PRIORITY_LABELS,
+  type PriorityValue,
+  type TaskSourceValue,
+} from "@taskbot/shared/types";
 import { cn } from "@/lib/utils";
 import { PRIORITY_STYLES } from "./statusStyles";
+
+/** inline-block keeps a parent's line-through (completed tasks) off the number. */
+export function TaskNumber({ number, className }: { number: number; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-block font-mono text-xs font-semibold text-slate-400 tabular-nums dark:text-slate-500",
+        className,
+      )}
+    >
+      {formatTaskNumber(number)}
+    </span>
+  );
+}
 
 export function PriorityBadge({ priority }: { priority: PriorityValue }) {
   return (

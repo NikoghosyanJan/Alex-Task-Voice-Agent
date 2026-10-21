@@ -42,6 +42,7 @@ export interface TgMessage {
   photo?: unknown[];
   document?: unknown;
   sticker?: unknown;
+  reply_to_message?: TgMessage;
 }
 
 export interface TgCallbackQuery {
@@ -91,6 +92,12 @@ export interface EditMessageTextParams {
   parse_mode?: "HTML" | "MarkdownV2";
   reply_markup?: InlineKeyboardMarkup;
   link_preview_options?: { is_disabled: boolean };
+}
+
+export interface EditMessageReplyMarkupParams {
+  chat_id: number;
+  message_id: number;
+  reply_markup?: InlineKeyboardMarkup;
 }
 
 export interface BotCommand {

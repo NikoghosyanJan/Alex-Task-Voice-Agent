@@ -4,7 +4,7 @@ import { CalendarClock } from "lucide-react";
 import type { TaskDTO, TaskStatusValue } from "@taskbot/shared/types";
 import { authorName, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { PriorityBadge, SourceBadge } from "./Badges";
+import { PriorityBadge, SourceBadge, TaskNumber } from "./Badges";
 import { StatusToggle } from "./StatusToggle";
 
 interface Props {
@@ -35,6 +35,7 @@ export function TaskCard({ task, now, highlighted, overlay, onStatusChange }: Pr
             completed && "text-slate-500 line-through decoration-slate-400 dark:text-slate-500",
           )}
         >
+          <TaskNumber number={task.number} className="mr-1.5" />
           {task.title}
         </h3>
         <PriorityBadge priority={task.priority} />

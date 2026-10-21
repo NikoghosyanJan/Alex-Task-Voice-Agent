@@ -1,4 +1,4 @@
-import { parseStatusCallback } from "@taskbot/jobs";
+import { parseActionCallback, parseStatusCallback } from "@taskbot/jobs";
 import type {
   TaskStatusValue,
   TgCallbackQuery,
@@ -19,9 +19,10 @@ export interface AudioMedia {
 
 export type UpdateAction =
   | { kind: "command"; command: BotCommand; message: TgMessage; from: TgUser }
-  | { kind: "text"; text: string; message: TgMessage; from: TgUser }
-  | { kind: "audio"; media: AudioMedia; message: TgMessage; from: TgUser }
+  | { kind: "text"; text: string; replyToText?: string; message: TgMessage; from: TgUser }
+  | { kind: "audio"; media: AudioMedia; replyToText?: string; message: TgMessage; from: TgUser }
   | { kind: "status_callback"; taskId: string; status: TaskStatusValue; callback: TgCallbackQuery }
+  | { kind: "action_callback"; actionId: string; confirmed: boolean; callback: TgCallbackQuery }
   | { kind: "unknown_callback"; callback: TgCallbackQuery }
   | { kind: "unsupported"; message: TgMessage }
   | { kind: "ignore" };
@@ -39,15 +40,18 @@ export function parseCommand(text: string): BotCommand | null {
 export function classifyUpdate(update: TgUpdate): UpdateAction {
   if (update.callback_query) {
     const callback = update.callback_query;
-    const parsed = parseStatusCallback(callback.data);
-    return parsed
-      ? { kind: "status_callback", ...parsed, callback }
-      : { kind: "unknown_callback", callback };
+    const status = parseStatusCallback(callback.data);
+    if (status) return { kind: "status_callback", ...status, callback };
+    const action = parseActionCallback(callback.data);
+    if (action) return { kind: "action_callback", ...action, callback };
+    return { kind: "unknown_callback", callback };
   }
 
   const message = update.message;
   if (!message || !message.from || message.from.is_bot) return { kind: "ignore" };
   const from = message.from;
+  const reply = message.reply_to_message;
+  const replyToText = (reply?.text ?? reply?.caption)?.trim() || undefined;
 
   if (message.voice) {
     const { file_id, duration, file_size, mime_type } = message.voice;
@@ -60,6 +64,7 @@ export function classifyUpdate(update: TgUpdate): UpdateAction {
         fileSize: file_size,
         mimeType: mime_type,
       },
+      replyToText,
       message,
       from,
     };
@@ -77,6 +82,7 @@ export function classifyUpdate(update: TgUpdate): UpdateAction {
         fileSize: file_size,
         mimeType: mime_type,
       },
+      replyToText,
       message,
       from,
     };
@@ -86,7 +92,7 @@ export function classifyUpdate(update: TgUpdate): UpdateAction {
   if (text) {
     const command = parseCommand(text);
     if (command) return { kind: "command", command, message, from };
-    return { kind: "text", text, message, from };
+    return { kind: "text", text, replyToText, message, from };
   }
 
   return { kind: "unsupported", message };

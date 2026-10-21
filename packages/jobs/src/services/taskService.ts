@@ -1,6 +1,6 @@
 import { getPrisma, Prisma } from "@taskbot/db";
 import { publishTaskEvent, type TaskDTO, type TaskStatusValue } from "@taskbot/shared";
-import type { StructuredTask } from "@taskbot/shared";
+import type { StructuredTask, TaskChanges } from "@taskbot/shared";
 
 const taskInclude = {
   user: { select: { username: true, firstName: true, chatId: true, telegramId: true } },
@@ -19,6 +19,7 @@ export interface TaskRecord {
 export function toTaskDTO(task: TaskWithUser): TaskDTO {
   return {
     id: task.id,
+    number: task.number,
     title: task.title,
     description: task.description,
     status: task.status,
@@ -145,14 +146,15 @@ export async function createTaskFromTelegram(
   }
 }
 
-export async function updateTaskStatus(
-  id: string,
-  status: TaskStatusValue,
-): Promise<TaskRecord | null> {
+export function updateTaskStatus(id: string, status: TaskStatusValue): Promise<TaskRecord | null> {
+  return updateTask(id, { status });
+}
+
+export async function updateTask(id: string, changes: TaskChanges): Promise<TaskRecord | null> {
   try {
     const task = await getPrisma().task.update({
       where: { id },
-      data: { status },
+      data: changes,
       include: taskInclude,
     });
     const record = toRecord(task);

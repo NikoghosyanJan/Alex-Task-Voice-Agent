@@ -18,5 +18,5 @@ export function getTranscribeModel(): string {
 }
 
 export function getTaskModel(): string {
-  return getEnv().OPENAI_TASK_MODEL ?? "gpt-4o-mini";
+  return getEnv().OPENAI_TASK_MODEL ?? "gpt-4.1-mini";
 }

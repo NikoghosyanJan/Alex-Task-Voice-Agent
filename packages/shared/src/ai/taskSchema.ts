@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRIORITIES, type PriorityValue } from "../types";
+import { PRIORITIES, type PriorityValue, type TaskStatusValue } from "../types";
 
 export const TITLE_MAX = 120;
 export const DESCRIPTION_MAX = 2_000;
@@ -44,8 +44,22 @@ export interface StructuredTask {
   dueDate: Date | null;
 }
 
-function truncate(text: string, max: number): string {
+/** Fields to change on an existing task; absent keys stay as they are, null clears. */
+export interface TaskChanges {
+  title?: string;
+  description?: string | null;
+  priority?: PriorityValue;
+  dueDate?: Date | null;
+  status?: TaskStatusValue;
+}
+
+export function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+export function parseDate(value: string): Date | null {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** Validates model output; returns null if it can't be used. */
@@ -57,17 +71,11 @@ export function normalizeStructuredTask(raw: unknown): StructuredTask | null {
   if (!title) return null;
 
   const description = parsed.data.description?.trim() || null;
-  let dueDate: Date | null = null;
-  if (parsed.data.dueDate) {
-    const date = new Date(parsed.data.dueDate);
-    dueDate = Number.isNaN(date.getTime()) ? null : date;
-  }
-
   return {
     title: truncate(title, TITLE_MAX),
     description: description ? truncate(description, DESCRIPTION_MAX) : null,
     priority: parsed.data.priority,
-    dueDate,
+    dueDate: parsed.data.dueDate ? parseDate(parsed.data.dueDate) : null,
   };
 }
 

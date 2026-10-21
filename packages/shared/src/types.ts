@@ -24,8 +24,14 @@ export const PRIORITY_LABELS: Record<PriorityValue, string> = {
   HIGH: "High",
 };
 
+/** Zero-padded to at least two digits: 1 -> "#01", 99 -> "#99", 100 -> "#100". */
+export function formatTaskNumber(number: number): string {
+  return `#${String(number).padStart(2, "0")}`;
+}
+
 export interface TaskDTO {
   id: string;
+  number: number;
   title: string;
   description: string | null;
   status: TaskStatusValue;

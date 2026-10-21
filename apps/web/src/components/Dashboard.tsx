@@ -4,6 +4,7 @@ import { RefreshCw, Send, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  formatTaskNumber,
   STATUS_LABELS,
   TASK_STATUSES,
   type TaskDTO,
@@ -85,7 +86,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
       if (event.type === "task.created" && isNew) {
         flash(event.task.id);
         toast.success("New task from Telegram", {
-          description: `${authorName(event.task.author)}: ${event.task.title}`,
+          description: `${formatTaskNumber(event.task.number)} · ${authorName(event.task.author)}: ${event.task.title}`,
         });
       }
     },
@@ -130,11 +131,13 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
 
   const visibleTasks = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
+    const numberQuery = /^#?\d+$/.test(query) ? Number(query.replace("#", "")) : null;
     return sortedTasks.filter(
       (task) =>
         (filters.source === "ALL" || task.source === filters.source) &&
         (filters.priority === "ALL" || task.priority === filters.priority) &&
         (!query ||
+          task.number === numberQuery ||
           task.title.toLowerCase().includes(query) ||
           task.description?.toLowerCase().includes(query) ||
           task.originalText.toLowerCase().includes(query)),

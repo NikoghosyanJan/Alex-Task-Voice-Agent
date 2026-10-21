@@ -3,7 +3,7 @@
 import type { TaskDTO, TaskStatusValue } from "@taskbot/shared/types";
 import { authorName, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { PriorityBadge, SourceBadge } from "./Badges";
+import { PriorityBadge, SourceBadge, TaskNumber } from "./Badges";
 import { StatusToggle } from "./StatusToggle";
 
 interface Props {
@@ -52,6 +52,7 @@ export function ListView({ tasks, now, highlighted, onStatusChange }: Props) {
                       task.status === "COMPLETED" && "text-slate-500 line-through",
                     )}
                   >
+                    <TaskNumber number={task.number} className="mr-1.5" />
                     {task.title}
                   </div>
                   <div className="mt-0.5 flex gap-3 text-xs text-slate-500 dark:text-slate-400">

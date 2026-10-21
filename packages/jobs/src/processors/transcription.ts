@@ -68,6 +68,8 @@ export async function processTranscription(
       updateId: data.updateId,
       chatId: data.chatId,
       userId: data.userId,
+      telegramUserId: data.telegramUserId,
+      replyToText: data.replyToText,
       statusMessageId,
       source: "VOICE",
       text: transcript,

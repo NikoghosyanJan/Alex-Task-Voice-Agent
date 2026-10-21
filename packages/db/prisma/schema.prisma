@@ -39,6 +39,8 @@ model User {
 
 model Task {
   id               String     @id @default(cuid())
+  /// Short human-friendly id shown as #01, #02, ... on the dashboard and in Telegram
+  number           Int        @unique @default(autoincrement())
   title            String
   description      String?
   status           TaskStatus @default(PENDING)

@@ -3,20 +3,21 @@ import {
   getAppUrl,
   getTelegram,
   getTimeZone,
+  interpretMessage,
   logger,
-  structureTask,
   transcribeAudio,
   type Enqueue,
   type Logger,
-  type StructuredTask,
+  type MessagePlan,
+  type TaskContext,
+  type TaskDTO,
   type TelegramClient,
   type TranscribeOptions,
 } from "@taskbot/shared";
+import { getPendingAction, savePendingAction, type PendingAction } from "./actions/pendingActions";
 import {
-  createTaskFromTelegram,
   getTaskRecord,
-  setCardMessageId,
-  type CreateTelegramTaskInput,
+  listRecentTasksForTelegramUser,
   type TaskRecord,
 } from "./services/taskService";
 
@@ -25,14 +26,18 @@ export interface JobDeps {
   telegram: Pick<TelegramClient, "getFile" | "downloadFile" | "sendMessage" | "editMessageText">;
   ai: {
     transcribe(audio: Buffer, options: TranscribeOptions): Promise<string>;
-    structure(text: string): Promise<StructuredTask>;
+    interpret(
+      text: string,
+      context: { tasks: TaskContext[]; replyTo?: string },
+    ): Promise<MessagePlan>;
   };
   tasks: {
-    createFromTelegram(
-      input: CreateTelegramTaskInput,
-    ): Promise<{ record: TaskRecord; created: boolean }>;
+    listForTelegramUser(telegramId: number, limit: number): Promise<TaskDTO[]>;
     getRecord(id: string): Promise<TaskRecord | null>;
-    setCardMessageId(id: string, messageId: number): Promise<void>;
+  };
+  actions: {
+    save(action: PendingAction): Promise<void>;
+    get(id: string): Promise<PendingAction | null>;
   };
   enqueue: Enqueue;
   appUrl: string;
@@ -46,13 +51,13 @@ export function createDefaultDeps(): JobDeps {
     telegram: getTelegram(),
     ai: {
       transcribe: transcribeAudio,
-      structure: (text) => structureTask(text, { timeZone }),
+      interpret: (text, context) => interpretMessage(text, { ...context, timeZone }),
     },
     tasks: {
-      createFromTelegram: createTaskFromTelegram,
+      listForTelegramUser: listRecentTasksForTelegramUser,
       getRecord: getTaskRecord,
-      setCardMessageId,
     },
+    actions: { save: savePendingAction, get: getPendingAction },
     enqueue,
     appUrl: getAppUrl(),
     timeZone,

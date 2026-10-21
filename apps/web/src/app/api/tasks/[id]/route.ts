@@ -29,7 +29,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (updated.cardMessageId) {
       // Keeping the Telegram card in sync is async and must not fail the request.
       try {
-        await enqueue(QueueName.Notifications, { kind: "task_status_changed", taskId: id });
+        await enqueue(QueueName.Notifications, { kind: "task_updated", taskId: id });
         scheduleDrain("dashboard:status");
       } catch (err) {
         logger.warn({ taskId: id, err: errorDetails(err) }, "could not enqueue card sync");

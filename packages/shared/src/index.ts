@@ -10,4 +10,4 @@ export * from "./telegram/client";
 export * from "./ai/openai";
 export * from "./ai/transcribe";
 export * from "./ai/taskSchema";
-export * from "./ai/structureTask";
+export * from "./ai/interpretMessage";

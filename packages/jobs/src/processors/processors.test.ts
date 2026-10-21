@@ -1,14 +1,16 @@
 import { UnrecoverableError } from "bullmq";
 import { describe, expect, it } from "vitest";
-import { AppError } from "@taskbot/shared";
+import { AppError, type InlineKeyboardButton } from "@taskbot/shared";
 import { handleFinalFailure } from "../failure";
-import { makeDeps, makeRecord } from "../testUtils";
+import { makeDeps, makeRecord, makeTask } from "../testUtils";
 import { runJob } from "./index";
 
 const voiceJob = {
   updateId: 10,
   chatId: 777,
   userId: "user_1",
+  telegramUserId: 777,
+  replyToText: "Task created\n\n#01 · Buy milk",
   messageId: 5,
   statusMessageId: 600,
   fileId: "FILE",
@@ -20,6 +22,7 @@ const textJob = {
   updateId: 11,
   chatId: 777,
   userId: "user_1",
+  telegramUserId: 777,
   statusMessageId: 601,
   source: "TEXT" as const,
   text: "Buy milk tomorrow",
@@ -49,6 +52,8 @@ describe("transcription processor", () => {
         source: "VOICE",
         text: "buy milk tomorrow",
         transcript: "buy milk tomorrow",
+        telegramUserId: 777,
+        replyToText: voiceJob.replyToText,
       }),
       { jobId: "task-10" },
     );
@@ -80,89 +85,155 @@ describe("transcription processor", () => {
 });
 
 describe("task processing processor", () => {
-  it("stores the AI-structured task and queues the Telegram card", async () => {
+  it("proposes a new task for confirmation without writing to the database", async () => {
     const deps = makeDeps();
-    deps.tasks.createFromTelegram.mockResolvedValue({
-      record: makeRecord({ id: "task_9" }),
-      created: true,
-    });
     const result = await runJob(
       "task-processing",
       { id: "task-11", data: textJob, ...attempt(0) },
       deps,
     );
 
-    expect(result).toEqual({ taskId: "task_9", created: true, structured: true });
-    expect(deps.tasks.createFromTelegram).toHaveBeenCalledWith(
+    expect(result).toEqual({ action: "create", actionId: "11", usedAi: true });
+    expect(deps.tasks.listForTelegramUser).toHaveBeenCalledWith(777, 50);
+    expect(deps.actions.save).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Buy milk",
-        priority: "HIGH",
+        id: "11",
+        kind: "create",
+        telegramUserId: 777,
         updateId: 11,
         originalText: "Buy milk tomorrow",
+        task: { title: "Buy milk", description: null, priority: "HIGH", dueDate: null },
       }),
     );
     expect(deps.enqueue).toHaveBeenCalledWith(
       "notifications",
-      { kind: "task_created", taskId: "task_9", chatId: 777, statusMessageId: 601 },
-      { jobId: "notify-created-task_9" },
+      { kind: "action_proposed", actionId: "11", chatId: 777, statusMessageId: 601 },
+      { jobId: "notify-proposal-11" },
+    );
+  });
+
+  it("proposes changes to an existing task with a snapshot of its current values", async () => {
+    const deps = makeDeps();
+    deps.tasks.listForTelegramUser.mockResolvedValue([
+      makeTask({ id: "task_5", number: 5, title: "Call dentist" }),
+    ]);
+    deps.ai.interpret.mockResolvedValue({
+      action: "update",
+      taskNumber: 5,
+      changes: { status: "IN_PROGRESS", dueDate: new Date("2026-10-23T14:00:00.000Z") },
+    });
+    await runJob(
+      "task-processing",
+      { id: "t", data: { ...textJob, text: "put task 5 in progress" }, ...attempt(0) },
+      deps,
+    );
+
+    expect(deps.actions.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "update",
+        taskId: "task_5",
+        before: expect.objectContaining({ number: 5, title: "Call dentist", status: "PENDING" }),
+        changes: { status: "IN_PROGRESS", dueDate: "2026-10-23T14:00:00.000Z" },
+      }),
+    );
+  });
+
+  it("replies instead of proposing when the AI needs clarification", async () => {
+    const deps = makeDeps();
+    deps.ai.interpret.mockResolvedValue({ action: "clarify", message: "Which task? #01 or #02?" });
+    await runJob("task-processing", { id: "t", data: textJob, ...attempt(0) }, deps);
+
+    expect(deps.actions.save).not.toHaveBeenCalled();
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      "notifications",
+      { kind: "reply", chatId: 777, statusMessageId: 601, text: "Which task? #01 or #02?" },
+      { jobId: "notify-reply-11" },
     );
   });
 
   it("retries a transient AI failure while attempts remain", async () => {
     const deps = makeDeps();
-    deps.ai.structure.mockRejectedValue(aiDown());
+    deps.ai.interpret.mockRejectedValue(aiDown());
     await expect(
       runJob("task-processing", { id: "t", data: textJob, ...attempt(0) }, deps),
     ).rejects.toThrow();
-    expect(deps.tasks.createFromTelegram).not.toHaveBeenCalled();
+    expect(deps.actions.save).not.toHaveBeenCalled();
   });
 
-  it("falls back to the raw text on the final attempt instead of losing the task", async () => {
+  it("proposes the raw text as a task on the final attempt instead of losing it", async () => {
     const deps = makeDeps();
-    deps.ai.structure.mockRejectedValue(aiDown());
+    deps.ai.interpret.mockRejectedValue(aiDown());
     const result = await runJob("task-processing", { id: "t", data: textJob, ...attempt(2) }, deps);
-    expect(result).toMatchObject({ structured: false });
-    expect(deps.tasks.createFromTelegram).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Buy milk tomorrow", priority: "MEDIUM" }),
+    expect(result).toMatchObject({ action: "create", usedAi: false });
+    expect(deps.actions.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.objectContaining({ title: "Buy milk tomorrow", priority: "MEDIUM" }),
+      }),
     );
   });
 
   it("falls back immediately when the AI error is not retryable", async () => {
     const deps = makeDeps();
-    deps.ai.structure.mockRejectedValue(new AppError("AI_BAD_OUTPUT", "garbage"));
+    deps.ai.interpret.mockRejectedValue(new AppError("AI_BAD_OUTPUT", "garbage"));
     await expect(
       runJob("task-processing", { id: "t", data: textJob, ...attempt(0) }, deps),
-    ).resolves.toMatchObject({
-      structured: false,
-    });
+    ).resolves.toMatchObject({ usedAi: false });
   });
 });
 
 describe("notification processor", () => {
-  it("turns the status message into the task card and remembers its id", async () => {
+  it("shows the proposal with Confirm / Cancel buttons", async () => {
     const deps = makeDeps();
+    deps.actions.get.mockResolvedValue({
+      id: "11",
+      kind: "create",
+      telegramUserId: 777,
+      userId: "user_1",
+      chatId: 777,
+      transcript: null,
+      updateId: 11,
+      source: "TEXT",
+      originalText: "buy milk",
+      task: { title: "Buy milk", description: null, priority: "HIGH", dueDate: null },
+    });
     await runJob(
       "notifications",
       {
         id: "n",
-        data: { kind: "task_created", taskId: "task_1", chatId: 777, statusMessageId: 601 },
+        data: { kind: "action_proposed", actionId: "11", chatId: 777, statusMessageId: 601 },
         ...attempt(0),
       },
       deps,
     );
     const edit = deps.telegram.editMessageText.mock.calls[0]?.[0];
     expect(edit).toMatchObject({ message_id: 601, parse_mode: "HTML" });
-    expect(edit?.text).toContain("Task created");
-    expect(edit?.reply_markup?.inline_keyboard[0]).toHaveLength(2);
-    expect(deps.tasks.setCardMessageId).toHaveBeenCalledWith("task_1", 601);
+    expect(edit?.text).toContain("Create a new task");
+    const buttons: InlineKeyboardButton[] = edit?.reply_markup?.inline_keyboard[0] ?? [];
+    expect(buttons.map((b) => b.callback_data)).toEqual(["ac:11:y", "ac:11:n"]);
   });
 
-  it("syncs the card after a dashboard status change", async () => {
+  it("sends clarifying replies as escaped plain text", async () => {
+    const deps = makeDeps();
+    await runJob(
+      "notifications",
+      {
+        id: "n",
+        data: { kind: "reply", chatId: 777, statusMessageId: 601, text: "Which <task>?" },
+        ...attempt(0),
+      },
+      deps,
+    );
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
+      expect.objectContaining({ message_id: 601, text: "Which &lt;task&gt;?" }),
+    );
+  });
+
+  it("syncs the card after a change made elsewhere", async () => {
     const deps = makeDeps();
     deps.tasks.getRecord.mockResolvedValue(makeRecord({ status: "COMPLETED" }, 700));
     await runJob(
       "notifications",
-      { id: "n", data: { kind: "task_status_changed", taskId: "task_1" }, ...attempt(0) },
+      { id: "n", data: { kind: "task_updated", taskId: "task_1" }, ...attempt(0) },
       deps,
     );
     expect(deps.telegram.editMessageText).toHaveBeenCalledWith(

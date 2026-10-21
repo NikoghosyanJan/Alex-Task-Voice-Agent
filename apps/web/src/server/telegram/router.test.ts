@@ -75,6 +75,26 @@ describe("classifyUpdate", () => {
     );
   });
 
+  it("parses Confirm / Cancel buttons", () => {
+    const callback = { id: "cb", from, data: "ac:123:y" };
+    expect(classifyUpdate({ update_id: 5, callback_query: callback })).toMatchObject({
+      kind: "action_callback",
+      actionId: "123",
+      confirmed: true,
+    });
+    expect(
+      classifyUpdate({ update_id: 6, callback_query: { ...callback, data: "ac:123:n" } }),
+    ).toMatchObject({ confirmed: false });
+  });
+
+  it("keeps the text of the replied-to message as context", () => {
+    const reply = { message_id: 3, date: 0, chat, text: "Task created\n\n#05 · Call dentist" };
+    expect(
+      classifyUpdate(message({ text: "mark this done", reply_to_message: reply })),
+    ).toMatchObject({ kind: "text", replyToText: "Task created\n\n#05 · Call dentist" });
+    expect(classifyUpdate(message({ text: "no reply" }))).toMatchObject({ replyToText: undefined });
+  });
+
   it("flags unsupported content and ignores bots and empty updates", () => {
     expect(classifyUpdate(message({ photo: [{}] })).kind).toBe("unsupported");
     expect(classifyUpdate(message({ text: "hi", from: { ...from, is_bot: true } })).kind).toBe(

@@ -1,6 +1,7 @@
 import { getEnv, requireEnv } from "../env";
 import type {
   BotCommand,
+  EditMessageReplyMarkupParams,
   EditMessageTextParams,
   InlineKeyboardMarkup,
   SendMessageParams,
@@ -110,6 +111,18 @@ export class TelegramClient {
     } catch (err) {
       if (err instanceof TelegramApiError && err.description.includes("message is not modified")) {
         return null;
+      }
+      throw err;
+    }
+  }
+
+  /** Omitting reply_markup removes the inline keyboard. */
+  async editMessageReplyMarkup(params: EditMessageReplyMarkupParams): Promise<void> {
+    try {
+      await this.call<TgMessage | true>("editMessageReplyMarkup", params);
+    } catch (err) {
+      if (err instanceof TelegramApiError && err.description.includes("message is not modified")) {
+        return;
       }
       throw err;
     }

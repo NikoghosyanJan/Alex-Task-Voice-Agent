@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { logger, type TgUpdate } from "@taskbot/shared";
-import type { TaskRecord } from "@taskbot/jobs";
+import type { PendingAction, TaskRecord } from "@taskbot/jobs";
 import { handleUpdate, type WebhookDeps } from "./handleUpdate";
 
 const from = { id: 777, is_bot: false, first_name: "Zhanna", username: "zhanna" };
@@ -10,6 +10,7 @@ function record(status: TaskRecord["task"]["status"] = "PENDING", owner = 777): 
   return {
     task: {
       id: "task_1",
+      number: 1,
       title: "Buy milk",
       description: null,
       status,
@@ -33,13 +34,20 @@ function makeDeps() {
     telegram: {
       sendMessage: vi.fn().mockResolvedValue({ message_id: 321 }),
       editMessageText: vi.fn().mockResolvedValue(null),
+      editMessageReplyMarkup: vi.fn().mockResolvedValue(undefined),
       answerCallbackQuery: vi.fn().mockResolvedValue(true),
     },
     users: { upsert: vi.fn().mockResolvedValue({ id: "user_1" }) },
     tasks: {
       getRecord: vi.fn().mockResolvedValue(record()),
-      updateStatus: vi.fn().mockResolvedValue(record("COMPLETED")),
+      update: vi.fn().mockResolvedValue(record("COMPLETED")),
+      createFromTelegram: vi.fn().mockResolvedValue({ record: record(), created: true }),
+      setCardMessageId: vi.fn().mockResolvedValue(undefined),
       recentForUser: vi.fn().mockResolvedValue([]),
+    },
+    actions: {
+      get: vi.fn<WebhookDeps["actions"]["get"]>().mockResolvedValue(null),
+      delete: vi.fn().mockResolvedValue(undefined),
     },
     enqueue: vi.fn().mockResolvedValue("job"),
     appUrl: "https://taskbot.example.com",
@@ -73,6 +81,7 @@ describe("handleUpdate", () => {
         updateId: 42,
         chatId: 777,
         userId: "user_1",
+        telegramUserId: 777,
         statusMessageId: 321,
         source: "TEXT",
         text: "Buy milk",
@@ -144,7 +153,7 @@ describe("handleUpdate", () => {
       },
     };
     await handleUpdate(update, deps);
-    expect(deps.tasks.updateStatus).toHaveBeenCalledWith("task_1", "COMPLETED");
+    expect(deps.tasks.update).toHaveBeenCalledWith("task_1", { status: "COMPLETED" });
     expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith("cb", "Marked as Completed");
     expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -161,7 +170,7 @@ describe("handleUpdate", () => {
       { update_id: 46, callback_query: { id: "cb", from, data: "st:task_1:C" } },
       deps,
     );
-    expect(deps.tasks.updateStatus).not.toHaveBeenCalled();
+    expect(deps.tasks.update).not.toHaveBeenCalled();
     expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith(
       "cb",
       expect.stringContaining("owner"),
@@ -176,6 +185,164 @@ describe("handleUpdate", () => {
       deps,
     );
     expect(deps.tasks.recentForUser).toHaveBeenCalledWith(777, 10);
-    expect(deps.telegram.sendMessage.mock.calls[0]?.[0].text).toContain("[Pending] Buy milk");
+    expect(deps.telegram.sendMessage.mock.calls[0]?.[0].text).toContain("#01 [Pending] Buy milk");
+  });
+
+  it("passes the replied-to message along so 'this task' can be resolved", async () => {
+    const deps = makeDeps();
+    await handleUpdate(
+      {
+        update_id: 48,
+        message: {
+          message_id: 2,
+          date: 0,
+          chat,
+          from,
+          text: "mark this as done",
+          reply_to_message: {
+            message_id: 55,
+            date: 0,
+            chat,
+            text: "Task created\n\n#01 · Buy milk",
+          },
+        },
+      },
+      deps,
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith(
+      "task-processing",
+      expect.objectContaining({ replyToText: "Task created\n\n#01 · Buy milk" }),
+      { jobId: "task-48" },
+    );
+  });
+});
+
+describe("confirming planned actions", () => {
+  const common = { id: "42", telegramUserId: 777, userId: "user_1", chatId: 777, transcript: null };
+  const createAction: PendingAction = {
+    ...common,
+    kind: "create",
+    updateId: 42,
+    source: "TEXT",
+    originalText: "buy milk",
+    task: {
+      title: "Buy milk",
+      description: null,
+      priority: "HIGH",
+      dueDate: "2026-10-22T14:00:00.000Z",
+    },
+  };
+  const updateAction: PendingAction = {
+    ...common,
+    kind: "update",
+    taskId: "task_1",
+    before: {
+      number: 1,
+      title: "Buy milk",
+      description: null,
+      priority: "MEDIUM",
+      dueDate: null,
+      status: "PENDING",
+    },
+    changes: { status: "COMPLETED", dueDate: null },
+  };
+  const press = (data: string, userId = 777): TgUpdate => ({
+    update_id: 90,
+    callback_query: {
+      id: "cb",
+      from: { ...from, id: userId },
+      data,
+      message: { message_id: 321, date: 0, chat },
+    },
+  });
+
+  it("creates the task on Confirm and turns the proposal into its card", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue(createAction);
+    await expect(handleUpdate(press("ac:42:y"), deps)).resolves.toEqual({
+      action: "action_callback",
+      enqueued: false,
+    });
+
+    expect(deps.tasks.createFromTelegram).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Buy milk",
+        priority: "HIGH",
+        dueDate: new Date("2026-10-22T14:00:00.000Z"),
+        updateId: 42,
+        userId: "user_1",
+      }),
+    );
+    expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith("cb", "Task created");
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
+      expect.objectContaining({ message_id: 321, text: expect.stringContaining("Task created") }),
+    );
+    expect(deps.tasks.setCardMessageId).toHaveBeenCalledWith("task_1", 321);
+    expect(deps.actions.delete).toHaveBeenCalledWith("42");
+  });
+
+  it("applies the planned changes on Confirm and syncs the task's original card", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue(updateAction);
+    deps.tasks.update.mockResolvedValue({ ...record("COMPLETED"), cardMessageId: 55 });
+    await expect(handleUpdate(press("ac:42:y"), deps)).resolves.toEqual({
+      action: "action_callback",
+      enqueued: true,
+    });
+
+    expect(deps.tasks.update).toHaveBeenCalledWith("task_1", {
+      status: "COMPLETED",
+      dueDate: null,
+    });
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message_id: 321,
+        text: expect.stringContaining("Status: Completed"),
+      }),
+    );
+    expect(deps.enqueue).toHaveBeenCalledWith("notifications", {
+      kind: "task_updated",
+      taskId: "task_1",
+    });
+  });
+
+  it("changes nothing on Cancel", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue(updateAction);
+    await handleUpdate(press("ac:42:n"), deps);
+
+    expect(deps.tasks.update).not.toHaveBeenCalled();
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Cancelled. Nothing was changed.") }),
+    );
+    expect(deps.actions.delete).toHaveBeenCalledWith("42");
+  });
+
+  it("only lets the requester confirm", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue(updateAction);
+    await handleUpdate(press("ac:42:y", 111), deps);
+
+    expect(deps.tasks.update).not.toHaveBeenCalled();
+    expect(deps.actions.delete).not.toHaveBeenCalled();
+    expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith(
+      "cb",
+      expect.stringContaining("Only the person"),
+    );
+  });
+
+  it("removes the buttons from an expired proposal", async () => {
+    const deps = makeDeps();
+    await handleUpdate(press("ac:42:y"), deps);
+
+    expect(deps.tasks.createFromTelegram).not.toHaveBeenCalled();
+    expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith(
+      "cb",
+      expect.stringContaining("expired"),
+    );
+    expect(deps.telegram.editMessageReplyMarkup).toHaveBeenCalledWith({
+      chat_id: 777,
+      message_id: 321,
+    });
   });
 });

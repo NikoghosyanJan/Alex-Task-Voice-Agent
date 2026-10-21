@@ -1,7 +1,11 @@
 import {
+  createTaskFromTelegram,
+  deletePendingAction,
+  getPendingAction,
   getTaskRecord,
   listRecentTasksForTelegramUser,
-  updateTaskStatus,
+  setCardMessageId,
+  updateTask,
   upsertTelegramUser,
 } from "@taskbot/jobs";
 import { enqueue, getAppUrl, getTelegram, getTimeZone, logger } from "@taskbot/shared";
@@ -13,9 +17,12 @@ export function createWebhookDeps(): WebhookDeps {
     users: { upsert: upsertTelegramUser },
     tasks: {
       getRecord: getTaskRecord,
-      updateStatus: updateTaskStatus,
+      update: updateTask,
+      createFromTelegram: createTaskFromTelegram,
+      setCardMessageId,
       recentForUser: listRecentTasksForTelegramUser,
     },
+    actions: { get: getPendingAction, delete: deletePendingAction },
     enqueue,
     appUrl: getAppUrl(),
     timeZone: getTimeZone(),

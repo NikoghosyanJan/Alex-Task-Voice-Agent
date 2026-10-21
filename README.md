@@ -1,6 +1,6 @@
 # TaskBot: Telegram voice and text to tasks
 
-Send a Telegram bot a text or voice message and it becomes a structured task: title, description, priority and due date, extracted by OpenAI. Tasks show up instantly on a live Kanban dashboard, and their status can be changed from either the dashboard or inline buttons in Telegram.
+Send a Telegram bot a text or voice message and it becomes a structured task: title, description, priority and due date, extracted by OpenAI. You can also change existing tasks in plain language ("put task 5 in progress", "make the dentist one high priority and move it to Friday"). The bot always shows what it's planning to do and acts only after you press **Confirm**. Every task gets a short number (`#01`, `#02`, ...). Tasks show up instantly on a live Kanban dashboard, and their status can be changed from either the dashboard or inline buttons in Telegram.
 
 **Live demo:** `https://<your-project>.vercel.app` · **Bot:** `@<your_bot_username>` _(fill in after deploying)_
 
@@ -10,7 +10,7 @@ Send a Telegram bot a text or voice message and it becomes a structured task: ti
 | ---------------- | ---------------------------------------------------------------------------- |
 | Bot interface    | Telegram Bot API (webhook, inline keyboards)                                 |
 | Speech-to-text   | OpenAI `gpt-4o-mini-transcribe` (configurable, e.g. `whisper-1`)             |
-| Task extraction  | OpenAI `gpt-4o-mini` with strict JSON-schema structured outputs              |
+| Intent + fields  | OpenAI `gpt-4.1-mini` with strict JSON-schema structured outputs             |
 | Web + API        | Next.js 16 (App Router, route handlers, SSE), React 19, Tailwind 4, dnd-kit  |
 | Database         | PostgreSQL on Neon, Prisma 7 (driver adapter `@prisma/adapter-pg`)           |
 | Queue / realtime | Redis: BullMQ job queues + Pub/Sub                                           |
@@ -44,21 +44,22 @@ flowchart LR
 1. Telegram POSTs the update to `/api/telegram/webhook`. The route checks the `X-Telegram-Bot-Api-Secret-Token` header, deduplicates on `update_id` (`SET tg:update:<id> NX EX 3600`) and upserts the user.
 2. The bot **immediately** replies "Transcribing your voice message..." and enqueues a `transcription` job (`jobId = voice-<update_id>`). The webhook answers in ~5–25 ms.
 3. The worker downloads the `.oga` file, transcribes it, and **edits the same message** to show the transcript. It then enqueues `task-processing`.
-4. `task-processing` asks GPT for `{ title, description, priority, dueDate }` (relative dates such as "tomorrow at 5" are resolved in `APP_TIMEZONE`). It stores the task, publishes `task.created` on Redis Pub/Sub, and enqueues `notifications`.
-5. `notifications` turns the status message into a task card with **Start / Done / Reopen** buttons and an **Open dashboard** link.
-6. Every open dashboard receives the event over SSE, and the card appears with a highlight and a toast.
+4. `task-processing` sends GPT the message, the user's 50 most recent tasks and, if the user replied to a message (e.g. a task card), that message's text. GPT returns one plan: **create** a task (`title, description, priority, dueDate`, with relative dates resolved in `APP_TIMEZONE`), **update** one of the user's tasks (status, priority, title, description or due date, by number or by name), or **clarify** (ambiguous task, unsupported request). The plan is validated against the user's tasks, so unknown task numbers and no-op changes become a clarifying question. **Nothing is written to the database yet.** The plan is stored in Redis as a pending action and a `notifications` job is queued.
+5. `notifications` edits the status message into the proposal, e.g. "Update task #05 · Call dentist: Status: Pending → In Progress", with **Confirm / Cancel** buttons.
+6. **Confirm** (handled in the webhook) creates or updates the task, publishes `task.created` / `task.updated` on Redis Pub/Sub, and turns the proposal into the task card with **Start / Done / Reopen** buttons and an **Open dashboard** link. **Cancel** leaves everything unchanged. Only the person who sent the message can press either button, and proposals expire after 24 hours.
+7. Every open dashboard receives the event over SSE, and the card appears with a highlight and a toast.
 
-Text messages skip step 3. Status changes from the dashboard are published the same way and queued as a `task_status_changed` notification, so the Telegram card stays in sync. Button presses in Telegram update the dashboard live.
+Text messages skip step 3. Status changes from the dashboard are published the same way and queued as a `task_updated` notification, so the Telegram card stays in sync. Button presses on a task card (Start / Done / Reopen) are explicit, so they apply immediately and update the dashboard live.
 
 ## How Redis is used
 
-| Role                    | Keys / channels                                     | Why                                                                                                                                                                                       |
-| ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Job queues (BullMQ)** | `transcription`, `task-processing`, `notifications` | Slow work (download, Whisper, GPT, Telegram edits) runs off the request path. You get retries with exponential backoff, a failed-jobs set, per-queue concurrency, and idempotent job ids. |
-| **Pub/Sub**             | `tasks:events`                                      | Fan-out of `task.created` / `task.updated` to every SSE connection, from any process: worker, drain, or API.                                                                              |
-| **Key-value**           | `tg:update:<id>`, `worker:drain:lock`               | Webhook idempotency (Telegram re-delivers on timeouts) and a distributed lock so only one serverless drain runs at a time.                                                                |
+| Role                    | Keys / channels                                         | Why                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Job queues (BullMQ)** | `transcription`, `task-processing`, `notifications`     | Slow work (download, Whisper, GPT, Telegram edits) runs off the request path. You get retries with exponential backoff, a failed-jobs set, per-queue concurrency, and idempotent job ids. |
+| **Pub/Sub**             | `tasks:events`                                          | Fan-out of `task.created` / `task.updated` to every SSE connection, from any process: worker, drain, or API.                                                                              |
+| **Key-value**           | `tg:update:<id>`, `tg:action:<id>`, `worker:drain:lock` | Webhook idempotency (Telegram re-delivers on timeouts), AI plans waiting for the user's Confirm (24h TTL), and a distributed lock so only one serverless drain runs at a time.            |
 
-The pipeline is split into three queues on purpose. A failed GPT call retries only the cheap structuring step, never the paid transcription. A Telegram outage only delays the card, not the task.
+The pipeline is split into three queues on purpose. A failed GPT call retries only the cheap planning step, never the paid transcription. A Telegram outage only delays the proposal, not the plan.
 
 ## Worker modes
 
@@ -79,7 +80,7 @@ Serverless mode keeps the live deployment free (no paid always-on host). It also
 - **Error classification** (`packages/shared/src/errors.ts`):
   - OpenAI 5xx, 429 and connection errors, and Telegram 5xx/429/timeouts, are **retried**.
   - Quota, auth and 4xx errors, empty transcripts and oversized files throw `UnrecoverableError` (**no wasted retries**).
-- **Graceful degradation:** if GPT structuring fails permanently, the raw text becomes the task. The user's task is never lost.
+- **Graceful degradation:** if GPT planning fails permanently, the raw text is proposed as a new task (still behind Confirm). The user's message is never lost.
 - **User feedback on failure:** when a job runs out of attempts, the status message is edited to explain why, e.g. "Couldn't process the voice message. I couldn't hear any speech in that message. Please try again or send the task as text."
 - **Idempotency:** the Redis `update_id` dedupe, deterministic job ids, and `Task.telegramUpdateId @unique` mean a retried job returns the existing task instead of creating a duplicate.
 - **Timeouts** on every external call (Telegram 10s, file download 30s, OpenAI 45s). Telegram `retry_after` hints of 3s or less are honored inline.
@@ -139,7 +140,7 @@ pnpm dev:worker              # worker
 | `TELEGRAM_WEBHOOK_SECRET`                       | Random string; Telegram echoes it in a header, which the webhook verifies |
 | `TELEGRAM_BOT_USERNAME`                         | Bot username without `@` (for the "Open bot" button)                      |
 | `OPENAI_API_KEY`                                | OpenAI key                                                                |
-| `OPENAI_TRANSCRIBE_MODEL` / `OPENAI_TASK_MODEL` | Defaults: `gpt-4o-mini-transcribe` / `gpt-4o-mini`                        |
+| `OPENAI_TRANSCRIBE_MODEL` / `OPENAI_TASK_MODEL` | Defaults: `gpt-4o-mini-transcribe` / `gpt-4.1-mini`                       |
 | `DATABASE_URL`                                  | Neon **pooled** connection string                                         |
 | `DIRECT_URL`                                    | Neon **direct** connection string (migrations)                            |
 | `REDIS_URL`                                     | `redis://...` locally, `rediss://...` for Upstash (TLS)                   |

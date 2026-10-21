@@ -19,11 +19,16 @@ export const ALL_QUEUES: readonly QueueNameValue[] = [
 
 const chatId = z.number().int();
 const messageId = z.number().int().positive();
+const telegramUserId = z.number().int();
+/** Text of the message the user replied to; lets "this task" resolve to a task card. */
+const replyToText = z.string().optional();
 
 export const transcriptionJobSchema = z.object({
   updateId: z.number().int(),
   chatId,
   userId: z.string().min(1),
+  telegramUserId,
+  replyToText,
   messageId,
   statusMessageId: messageId.nullable(),
   fileId: z.string().min(1),
@@ -36,6 +41,8 @@ export const taskProcessingJobSchema = z.object({
   updateId: z.number().int(),
   chatId,
   userId: z.string().min(1),
+  telegramUserId,
+  replyToText,
   statusMessageId: messageId.nullable(),
   source: z.enum(["TEXT", "VOICE"]),
   text: z.string().trim().min(1),
@@ -43,14 +50,23 @@ export const taskProcessingJobSchema = z.object({
 });
 
 export const notificationJobSchema = z.discriminatedUnion("kind", [
+  /** Show the planned action with Confirm / Cancel buttons. */
   z.object({
-    kind: z.literal("task_created"),
-    taskId: z.string().min(1),
+    kind: z.literal("action_proposed"),
+    actionId: z.string().min(1),
     chatId,
     statusMessageId: messageId.nullable(),
   }),
+  /** Plain answer when nothing can be proposed, e.g. a clarifying question. */
   z.object({
-    kind: z.literal("task_status_changed"),
+    kind: z.literal("reply"),
+    chatId,
+    statusMessageId: messageId.nullable(),
+    text: z.string().min(1),
+  }),
+  /** Re-render the task's card in Telegram after a change made elsewhere. */
+  z.object({
+    kind: z.literal("task_updated"),
     taskId: z.string().min(1),
   }),
 ]);
