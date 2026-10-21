@@ -69,6 +69,14 @@ export const notificationJobSchema = z.discriminatedUnion("kind", [
     kind: z.literal("task_updated"),
     taskId: z.string().min(1),
   }),
+  /** The task is gone from the database, so the payload carries what the card needs. */
+  z.object({
+    kind: z.literal("task_deleted"),
+    chatId,
+    messageId,
+    number: z.number().int(),
+    title: z.string(),
+  }),
 ]);
 
 export type TranscriptionJob = z.infer<typeof transcriptionJobSchema>;

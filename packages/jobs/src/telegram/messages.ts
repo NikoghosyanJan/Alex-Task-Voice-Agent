@@ -80,6 +80,11 @@ export function formatTaskCard(
   return lines.join("\n");
 }
 
+/** Replaces a task card once the task is gone; sent without buttons. */
+export function formatDeletedCard(task: { number: number; title: string }): string {
+  return `<b>Task deleted</b>\n\n<s>${formatTaskNumber(task.number)} · ${escapeHtml(task.title)}</s>`;
+}
+
 export function taskKeyboard(task: TaskDTO, appUrl: string): InlineKeyboardMarkup {
   const statusButtons: InlineKeyboardButton[] = TASK_STATUSES.filter((s) => s !== task.status).map(
     (status) => ({
@@ -141,6 +146,18 @@ export function formatProposal(
     lines.push("", `Priority: ${PRIORITY_LABELS[task.priority]}`);
     const due = formatDueDate(task.dueDate, timeZone);
     if (due) lines.push(`Due: ${escapeHtml(due)}`);
+  } else if (action.kind === "delete") {
+    const { before } = action;
+    lines.push(
+      "I'm planning to delete this task:",
+      `<b>${formatTaskNumber(before.number)} · ${escapeHtml(before.title)}</b>`,
+      "",
+      `Status: ${STATUS_LABELS[before.status]}`,
+      `Priority: ${PRIORITY_LABELS[before.priority]}`,
+    );
+    const due = formatDueDate(before.dueDate, timeZone);
+    if (due) lines.push(`Due: ${escapeHtml(due)}`);
+    lines.push("", "This can't be undone.");
   } else {
     const { before, changes } = action;
     lines.push(

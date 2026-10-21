@@ -1,6 +1,7 @@
 import {
   createTaskFromTelegram,
   deletePendingAction,
+  deleteTask,
   getPendingAction,
   getTaskRecord,
   listRecentTasksForTelegramUser,
@@ -18,6 +19,7 @@ export function createWebhookDeps(): WebhookDeps {
     tasks: {
       getRecord: getTaskRecord,
       update: updateTask,
+      delete: deleteTask,
       createFromTelegram: createTaskFromTelegram,
       setCardMessageId,
       recentForUser: listRecentTasksForTelegramUser,

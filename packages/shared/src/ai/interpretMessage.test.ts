@@ -101,6 +101,22 @@ describe("normalizePlan", () => {
     expect(normalizePlan(update(null, null), tasks)).toMatchObject({ action: "clarify" });
   });
 
+  it("accepts deleting a known task and asks about unknown ones", () => {
+    const remove = (taskNumber: number | null) => ({
+      action: "delete",
+      task: null,
+      taskNumber,
+      changes: null,
+      message: null,
+    });
+    expect(normalizePlan(remove(5), tasks)).toEqual({ action: "delete", taskNumber: 5 });
+    expect(normalizePlan(remove(7), tasks)).toEqual({
+      action: "clarify",
+      message: "I couldn't find task #07 among your tasks.",
+    });
+    expect(normalizePlan(remove(null), tasks)).toMatchObject({ action: "clarify" });
+  });
+
   it("passes clarifying questions through and rejects unusable output", () => {
     expect(
       normalizePlan(
@@ -114,7 +130,7 @@ describe("normalizePlan", () => {
         tasks,
       ),
     ).toBeNull();
-    expect(normalizePlan({ action: "delete" }, tasks)).toBeNull();
+    expect(normalizePlan({ action: "archive" }, tasks)).toBeNull();
     expect(normalizePlan(null, tasks)).toBeNull();
   });
 });

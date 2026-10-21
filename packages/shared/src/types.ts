@@ -49,4 +49,7 @@ export interface TaskDTO {
 }
 
 export type TaskEvent =
-  { type: "task.created"; task: TaskDTO } | { type: "task.updated"; task: TaskDTO };
+  | { type: "task.created"; task: TaskDTO }
+  | { type: "task.updated"; task: TaskDTO }
+  /** Carries the task as it was just before deletion. */
+  | { type: "task.deleted"; task: TaskDTO };

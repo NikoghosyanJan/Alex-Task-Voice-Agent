@@ -21,6 +21,12 @@ const taskFieldsSchema = z.object({
 
 const changesSchema = taskFieldsSchema.extend({ status: z.enum(TASK_STATUSES) }).partial();
 
+/** The task as the user saw it when the plan was made, for the summary shown before confirming. */
+const snapshotSchema = taskFieldsSchema.extend({
+  number: z.number().int(),
+  status: z.enum(TASK_STATUSES),
+});
+
 const common = {
   id: z.string().min(1),
   /** Only this Telegram user may confirm or cancel. */
@@ -43,9 +49,14 @@ export const pendingActionSchema = z.discriminatedUnion("kind", [
     ...common,
     kind: z.literal("update"),
     taskId: z.string().min(1),
-    /** The task as the user saw it when the plan was made, for the "old -> new" summary. */
-    before: taskFieldsSchema.extend({ number: z.number().int(), status: z.enum(TASK_STATUSES) }),
+    before: snapshotSchema,
     changes: changesSchema,
+  }),
+  z.object({
+    ...common,
+    kind: z.literal("delete"),
+    taskId: z.string().min(1),
+    before: snapshotSchema,
   }),
 ]);
 

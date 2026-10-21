@@ -4,6 +4,7 @@ import type { TaskDTO, TaskStatusValue } from "@taskbot/shared/types";
 import { authorName, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PriorityBadge, SourceBadge, TaskNumber } from "./Badges";
+import { DeleteTaskButton } from "./DeleteTaskButton";
 import { StatusToggle } from "./StatusToggle";
 
 interface Props {
@@ -11,9 +12,10 @@ interface Props {
   now: number;
   highlighted: ReadonlySet<string>;
   onStatusChange: (id: string, status: TaskStatusValue) => void;
+  onDelete: (id: string) => void;
 }
 
-export function ListView({ tasks, now, highlighted, onStatusChange }: Props) {
+export function ListView({ tasks, now, highlighted, onStatusChange, onDelete }: Props) {
   if (tasks.length === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700">
@@ -31,7 +33,7 @@ export function ListView({ tasks, now, highlighted, onStatusChange }: Props) {
             <th className="px-4 py-3">Priority</th>
             <th className="px-4 py-3">Due</th>
             <th className="px-4 py-3">Created</th>
-            <th className="w-72 px-4 py-3">Status</th>
+            <th className="w-80 px-4 py-3">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -80,10 +82,14 @@ export function ListView({ tasks, now, highlighted, onStatusChange }: Props) {
                   {formatRelative(task.createdAt, now)}
                 </td>
                 <td className="md:px-4 md:py-3">
-                  <StatusToggle
-                    value={task.status}
-                    onChange={(status) => onStatusChange(task.id, status)}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <StatusToggle
+                      className="flex-1"
+                      value={task.status}
+                      onChange={(status) => onStatusChange(task.id, status)}
+                    />
+                    <DeleteTaskButton task={task} onDelete={onDelete} />
+                  </div>
                 </td>
               </tr>
             );

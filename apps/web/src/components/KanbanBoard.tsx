@@ -30,6 +30,7 @@ interface Props {
   now: number;
   highlighted: ReadonlySet<string>;
   onStatusChange: (id: string, status: TaskStatusValue) => void;
+  onDelete: (id: string) => void;
 }
 
 function DraggableTask(props: {
@@ -37,6 +38,7 @@ function DraggableTask(props: {
   now: number;
   highlighted: boolean;
   onStatusChange: Props["onStatusChange"];
+  onDelete: Props["onDelete"];
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: props.task.id });
   return (
@@ -51,6 +53,7 @@ function DraggableTask(props: {
         now={props.now}
         highlighted={props.highlighted}
         onStatusChange={props.onStatusChange}
+        onDelete={props.onDelete}
       />
     </li>
   );
@@ -62,6 +65,7 @@ function Column(props: {
   now: number;
   highlighted: ReadonlySet<string>;
   onStatusChange: Props["onStatusChange"];
+  onDelete: Props["onDelete"];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: props.status });
   const styles = STATUS_STYLES[props.status];
@@ -100,6 +104,7 @@ function Column(props: {
               now={props.now}
               highlighted={props.highlighted.has(task.id)}
               onStatusChange={props.onStatusChange}
+              onDelete={props.onDelete}
             />
           ))}
         </ul>
@@ -108,7 +113,7 @@ function Column(props: {
   );
 }
 
-export function KanbanBoard({ tasks, now, highlighted, onStatusChange }: Props) {
+export function KanbanBoard({ tasks, now, highlighted, onStatusChange, onDelete }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(
     // A small distance threshold keeps clicks on the status buttons working.
@@ -146,12 +151,19 @@ export function KanbanBoard({ tasks, now, highlighted, onStatusChange }: Props) 
             now={now}
             highlighted={highlighted}
             onStatusChange={onStatusChange}
+            onDelete={onDelete}
           />
         ))}
       </div>
       <DragOverlay>
         {activeTask ? (
-          <TaskCard task={activeTask} now={now} overlay onStatusChange={() => undefined} />
+          <TaskCard
+            task={activeTask}
+            now={now}
+            overlay
+            onStatusChange={() => undefined}
+            onDelete={() => undefined}
+          />
         ) : null}
       </DragOverlay>
     </DndContext>

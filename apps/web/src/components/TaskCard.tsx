@@ -5,6 +5,7 @@ import type { TaskDTO, TaskStatusValue } from "@taskbot/shared/types";
 import { authorName, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PriorityBadge, SourceBadge, TaskNumber } from "./Badges";
+import { DeleteTaskButton } from "./DeleteTaskButton";
 import { StatusToggle } from "./StatusToggle";
 
 interface Props {
@@ -13,9 +14,10 @@ interface Props {
   highlighted?: boolean;
   overlay?: boolean;
   onStatusChange: (id: string, status: TaskStatusValue) => void;
+  onDelete: (id: string) => void;
 }
 
-export function TaskCard({ task, now, highlighted, overlay, onStatusChange }: Props) {
+export function TaskCard({ task, now, highlighted, overlay, onStatusChange, onDelete }: Props) {
   const completed = task.status === "COMPLETED";
   const overdue = isOverdue(task.dueDate, completed, now);
 
@@ -83,11 +85,14 @@ export function TaskCard({ task, now, highlighted, overlay, onStatusChange }: Pr
         </details>
       )}
 
-      <StatusToggle
-        className="mt-3"
-        value={task.status}
-        onChange={(status) => onStatusChange(task.id, status)}
-      />
+      <div className="mt-3 flex items-center gap-1.5">
+        <StatusToggle
+          className="flex-1"
+          value={task.status}
+          onChange={(status) => onStatusChange(task.id, status)}
+        />
+        <DeleteTaskButton task={task} onDelete={onDelete} />
+      </div>
     </article>
   );
 }

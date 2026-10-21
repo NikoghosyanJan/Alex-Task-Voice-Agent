@@ -43,24 +43,28 @@ function toPendingAction(
   if (!target) {
     throw new AppError("AI_BAD_OUTPUT", `plan refers to unknown task #${plan.taskNumber}`);
   }
+  const before = {
+    number: target.number,
+    title: target.title,
+    description: target.description,
+    priority: target.priority,
+    dueDate: target.dueDate,
+    status: target.status,
+  };
+  if (plan.action === "delete") {
+    return { ...common, kind: "delete", taskId: target.id, before };
+  }
   return {
     ...common,
     kind: "update",
     taskId: target.id,
-    before: {
-      number: target.number,
-      title: target.title,
-      description: target.description,
-      priority: target.priority,
-      dueDate: target.dueDate,
-      status: target.status,
-    },
+    before,
     changes: serializeChanges(plan.changes),
   };
 }
 
 /**
- * Works out what the user wants (create a task or change one of theirs) and proposes it.
+ * Works out what the user wants (create a task, or change or delete one of theirs) and proposes it.
  * Nothing is written to the database here: the user confirms the plan in Telegram first.
  */
 export async function processTaskJob(

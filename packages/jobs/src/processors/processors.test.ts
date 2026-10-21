@@ -138,6 +138,28 @@ describe("task processing processor", () => {
     );
   });
 
+  it("proposes deleting an existing task", async () => {
+    const deps = makeDeps();
+    deps.tasks.listForTelegramUser.mockResolvedValue([
+      makeTask({ id: "task_3", number: 3, title: "Buy something" }),
+    ]);
+    deps.ai.interpret.mockResolvedValue({ action: "delete", taskNumber: 3 });
+    const result = await runJob(
+      "task-processing",
+      { id: "t", data: { ...textJob, text: "delete task 3" }, ...attempt(0) },
+      deps,
+    );
+
+    expect(result).toMatchObject({ action: "delete", actionId: "11" });
+    expect(deps.actions.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "delete",
+        taskId: "task_3",
+        before: expect.objectContaining({ number: 3, title: "Buy something" }),
+      }),
+    );
+  });
+
   it("replies instead of proposing when the AI needs clarification", async () => {
     const deps = makeDeps();
     deps.ai.interpret.mockResolvedValue({ action: "clarify", message: "Which task? #01 or #02?" });
@@ -226,6 +248,25 @@ describe("notification processor", () => {
     expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
       expect.objectContaining({ message_id: 601, text: "Which &lt;task&gt;?" }),
     );
+  });
+
+  it("marks the card of a deleted task and removes its buttons", async () => {
+    const deps = makeDeps();
+    await runJob(
+      "notifications",
+      {
+        id: "n",
+        data: { kind: "task_deleted", chatId: 777, messageId: 700, number: 3, title: "Buy <x>" },
+        ...attempt(0),
+      },
+      deps,
+    );
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith({
+      chat_id: 777,
+      message_id: 700,
+      text: "<b>Task deleted</b>\n\n<s>#03 · Buy &lt;x&gt;</s>",
+      parse_mode: "HTML",
+    });
   });
 
   it("syncs the card after a change made elsewhere", async () => {

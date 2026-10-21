@@ -166,6 +166,19 @@ export async function updateTask(id: string, changes: TaskChanges): Promise<Task
   }
 }
 
+/** Returns the deleted task, or null if it didn't exist. */
+export async function deleteTask(id: string): Promise<TaskRecord | null> {
+  try {
+    const task = await getPrisma().task.delete({ where: { id }, include: taskInclude });
+    const record = toRecord(task);
+    await publishTaskEvent({ type: "task.deleted", task: record.task });
+    return record;
+  } catch (err) {
+    if (isPrismaError(err, "P2025")) return null;
+    throw err;
+  }
+}
+
 export async function setCardMessageId(id: string, cardMessageId: number): Promise<void> {
   await getPrisma().task.update({ where: { id }, data: { cardMessageId } });
 }

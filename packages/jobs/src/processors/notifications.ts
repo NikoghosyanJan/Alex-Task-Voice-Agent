@@ -3,6 +3,7 @@ import type { JobContext } from "../context";
 import type { JobDeps } from "../deps";
 import {
   escapeHtml,
+  formatDeletedCard,
   formatProposal,
   formatTaskCard,
   PROPOSAL_HEADERS,
@@ -58,6 +59,17 @@ export async function processNotification(
         reply_markup: taskKeyboard(record.task, deps.appUrl),
       });
       return { messageId: record.cardMessageId };
+    }
+
+    case "task_deleted": {
+      // No reply_markup: the status buttons are removed along with the task.
+      await deps.telegram.editMessageText({
+        chat_id: data.chatId,
+        message_id: data.messageId,
+        text: formatDeletedCard(data),
+        parse_mode: "HTML",
+      });
+      return { messageId: data.messageId };
     }
   }
 }

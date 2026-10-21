@@ -41,6 +41,7 @@ function makeDeps() {
     tasks: {
       getRecord: vi.fn().mockResolvedValue(record()),
       update: vi.fn().mockResolvedValue(record("COMPLETED")),
+      delete: vi.fn<WebhookDeps["tasks"]["delete"]>().mockResolvedValue(record()),
       createFromTelegram: vi.fn().mockResolvedValue({ record: record(), created: true }),
       setCardMessageId: vi.fn().mockResolvedValue(undefined),
       recentForUser: vi.fn().mockResolvedValue([]),
@@ -304,6 +305,52 @@ describe("confirming planned actions", () => {
       kind: "task_updated",
       taskId: "task_1",
     });
+  });
+
+  it("deletes the task on Confirm and marks its original card as deleted", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue({
+      ...common,
+      kind: "delete",
+      taskId: "task_1",
+      before: updateAction.before,
+    });
+    await expect(handleUpdate(press("ac:42:y"), deps)).resolves.toEqual({
+      action: "action_callback",
+      enqueued: true,
+    });
+
+    expect(deps.tasks.delete).toHaveBeenCalledWith("task_1");
+    expect(deps.telegram.answerCallbackQuery).toHaveBeenCalledWith("cb", "Task deleted");
+    const edit = deps.telegram.editMessageText.mock.calls[0]?.[0];
+    expect(edit).toMatchObject({
+      message_id: 321,
+      text: expect.stringContaining("<s>#01 · Buy milk</s>"),
+    });
+    expect(edit?.reply_markup).toBeUndefined();
+    expect(deps.enqueue).toHaveBeenCalledWith("notifications", {
+      kind: "task_deleted",
+      chatId: 777,
+      messageId: 55,
+      number: 1,
+      title: "Buy milk",
+    });
+    expect(deps.actions.delete).toHaveBeenCalledWith("42");
+  });
+
+  it("treats a task that's already gone as deleted", async () => {
+    const deps = makeDeps();
+    deps.actions.get.mockResolvedValue({
+      ...common,
+      kind: "delete",
+      taskId: "task_1",
+      before: updateAction.before,
+    });
+    deps.tasks.delete.mockResolvedValue(null);
+    await expect(handleUpdate(press("ac:42:y"), deps)).resolves.toMatchObject({ enqueued: false });
+    expect(deps.telegram.editMessageText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("Task deleted") }),
+    );
   });
 
   it("changes nothing on Cancel", async () => {

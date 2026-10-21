@@ -12,7 +12,7 @@ import {
   type TaskStatusValue,
 } from "@taskbot/shared/types";
 import { useTaskEvents } from "@/hooks/useTaskEvents";
-import { fetchTasks, updateTaskStatus } from "@/lib/api";
+import { deleteTask as deleteTaskRequest, fetchTasks, updateTaskStatus } from "@/lib/api";
 import { authorName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { KanbanBoard } from "./KanbanBoard";
@@ -51,6 +51,8 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
   const [filters, setFilters] = useState<Filters>({ query: "", source: "ALL", priority: "ALL" });
   const [syncing, setSyncing] = useState(false);
   const tasksRef = useRef(tasks);
+  /** A late task.updated event must not bring a deleted task back. */
+  const deletedIds = useRef(new Set<string>());
   const now = useNow(60_000);
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
 
   /** Ignores stale payloads so an older event can't overwrite a newer state. */
   const upsert = useCallback((task: TaskDTO) => {
+    if (deletedIds.current.has(task.id)) return;
     setTasks((prev) => {
       const current = prev.get(task.id);
       if (current && current.updatedAt > task.updatedAt) return prev;
@@ -79,9 +82,25 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
     }, HIGHLIGHT_MS);
   }, []);
 
+  const remove = useCallback((id: string) => {
+    deletedIds.current.add(id);
+    setTasks((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   const onEvent = useCallback(
     (event: TaskEvent) => {
       const isNew = !tasksRef.current.has(event.task.id);
+      if (event.type === "task.deleted") {
+        remove(event.task.id);
+        // Deletions made on this dashboard were already removed and announced.
+        if (!isNew) toast(`Task ${formatTaskNumber(event.task.number)} was deleted`);
+        return;
+      }
       upsert(event.task);
       if (event.type === "task.created" && isNew) {
         flash(event.task.id);
@@ -90,7 +109,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
         });
       }
     },
-    [upsert, flash],
+    [upsert, remove, flash],
   );
 
   const resync = useCallback(async () => {
@@ -122,6 +141,26 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
       }
     },
     [upsert],
+  );
+
+  const deleteTask = useCallback(
+    async (id: string) => {
+      const previous = tasksRef.current.get(id);
+      if (!previous) return;
+
+      remove(id);
+      try {
+        await deleteTaskRequest(id);
+        toast.success(`Deleted ${formatTaskNumber(previous.number)} · ${previous.title}`);
+      } catch (err) {
+        deletedIds.current.delete(id);
+        setTasks((prev) => new Map(prev).set(id, previous));
+        toast.error(`Couldn't delete "${previous.title}"`, {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
+    },
+    [remove],
   );
 
   const sortedTasks = useMemo(
@@ -240,6 +279,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
           now={now}
           highlighted={highlighted}
           onStatusChange={changeStatus}
+          onDelete={deleteTask}
         />
       ) : (
         <ListView
@@ -247,6 +287,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
           now={now}
           highlighted={highlighted}
           onStatusChange={changeStatus}
+          onDelete={deleteTask}
         />
       )}
     </div>

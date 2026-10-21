@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { getTaskRecord, updateTaskStatus } from "@taskbot/jobs";
+import { deleteTask, getTaskRecord, updateTaskStatus } from "@taskbot/jobs";
 import { enqueue, errorDetails, logger, QueueName, TASK_STATUSES } from "@taskbot/shared";
 import { scheduleDrain } from "@/server/drainTrigger";
 import { jsonError } from "@/server/http";
@@ -40,5 +40,38 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   } catch (err) {
     logger.error({ taskId: id, err: errorDetails(err) }, "failed to update task");
     return jsonError(500, "failed to update task");
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+
+  try {
+    const deleted = await deleteTask(id);
+    if (!deleted) return jsonError(404, "task not found");
+
+    if (deleted.cardMessageId) {
+      // Marking the Telegram card as deleted is async and must not fail the request.
+      try {
+        await enqueue(QueueName.Notifications, {
+          kind: "task_deleted",
+          chatId: deleted.chatId,
+          messageId: deleted.cardMessageId,
+          number: deleted.task.number,
+          title: deleted.task.title,
+        });
+        scheduleDrain("dashboard:delete");
+      } catch (err) {
+        logger.warn({ taskId: id, err: errorDetails(err) }, "could not enqueue card update");
+      }
+    }
+
+    return new Response(null, { status: 204 });
+  } catch (err) {
+    logger.error({ taskId: id, err: errorDetails(err) }, "failed to delete task");
+    return jsonError(500, "failed to delete task");
   }
 }

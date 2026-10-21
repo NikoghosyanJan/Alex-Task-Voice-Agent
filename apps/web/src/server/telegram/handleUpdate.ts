@@ -1,6 +1,7 @@
 import {
   deserializeChanges,
   escapeHtml,
+  formatDeletedCard,
   formatDueDate,
   formatProposal,
   formatTaskCard,
@@ -22,6 +23,7 @@ import {
   STATUS_LABELS,
   type Enqueue,
   type Logger,
+  type NotificationJob,
   type TaskChanges,
   type TaskDTO,
   type TelegramClient,
@@ -42,6 +44,7 @@ export interface WebhookDeps {
   tasks: {
     getRecord(id: string): Promise<TaskRecord | null>;
     update(id: string, changes: TaskChanges): Promise<TaskRecord | null>;
+    delete(id: string): Promise<TaskRecord | null>;
     createFromTelegram(
       input: CreateTelegramTaskInput,
     ): Promise<{ record: TaskRecord; created: boolean }>;
@@ -96,9 +99,10 @@ function helpText(firstName: string | undefined, appUrl: string): string {
     "Send me a text or a voice message, for example:",
     '<i>"Call the dentist tomorrow at 10, it\'s urgent"</i>',
     "",
-    "You can also change your tasks by number or by name:",
+    "You can also change or delete your tasks by number or by name:",
     '<i>"Put task 5 in progress"</i>',
     '<i>"Make the dentist task high priority and move it to Friday"</i>',
+    '<i>"Delete task 3"</i>',
     'Reply to a task card with <i>"mark this as done"</i> to change that task.',
     "",
     "I'll show you what I'm planning to do, and nothing changes until you press <b>Confirm</b>.",
@@ -292,7 +296,10 @@ export async function handleUpdate(update: TgUpdate, deps: WebhookDeps): Promise
 }
 
 /** Carries out the confirmed plan; a retried update is harmless (creation is idempotent per update id). */
-async function executeAction(action: PendingAction, deps: WebhookDeps): Promise<TaskRecord | null> {
+async function executeAction(
+  action: Exclude<PendingAction, { kind: "delete" }>,
+  deps: WebhookDeps,
+): Promise<TaskRecord | null> {
   if (action.kind === "create") {
     const { record } = await deps.tasks.createFromTelegram({
       ...action.task,
@@ -348,6 +355,29 @@ async function handleActionCallback(
     return false;
   }
 
+  if (action.kind === "delete") {
+    // Null means it's already gone, e.g. Telegram retried this callback after the delete.
+    const deleted = await deps.tasks.delete(action.taskId);
+    await deps.telegram.answerCallbackQuery(callback.id, "Task deleted");
+    if (target) {
+      await deps.telegram.editMessageText({
+        ...target,
+        text: formatDeletedCard(action.before),
+        parse_mode: "HTML",
+      });
+    }
+    await deps.actions.delete(actionId);
+
+    if (!deleted?.cardMessageId || deleted.cardMessageId === target?.message_id) return false;
+    return enqueueCardSync(deps, {
+      kind: "task_deleted",
+      chatId: deleted.chatId,
+      messageId: deleted.cardMessageId,
+      number: deleted.task.number,
+      title: deleted.task.title,
+    });
+  }
+
   const record = await executeAction(action, deps);
   if (!record) {
     await deps.telegram.answerCallbackQuery(callback.id, "This task no longer exists.");
@@ -377,15 +407,18 @@ async function handleActionCallback(
     record.cardMessageId &&
     record.cardMessageId !== target?.message_id
   ) {
-    try {
-      await deps.enqueue(QueueName.Notifications, { kind: "task_updated", taskId: record.task.id });
-      return true;
-    } catch (err) {
-      deps.log.warn(
-        { taskId: record.task.id, err: errorDetails(err) },
-        "could not enqueue card sync",
-      );
-    }
+    return enqueueCardSync(deps, { kind: "task_updated", taskId: record.task.id });
   }
   return false;
+}
+
+/** Best effort: the action itself already succeeded. Returns true when the job was queued. */
+async function enqueueCardSync(deps: WebhookDeps, job: NotificationJob): Promise<boolean> {
+  try {
+    await deps.enqueue(QueueName.Notifications, job);
+    return true;
+  } catch (err) {
+    deps.log.warn({ job, err: errorDetails(err) }, "could not enqueue card sync");
+    return false;
+  }
 }

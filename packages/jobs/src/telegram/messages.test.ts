@@ -111,6 +111,23 @@ describe("proposals", () => {
     expect(text).toContain('Heard: "put the script task in progress"');
   });
 
+  it("names the task to delete", () => {
+    const action: PendingAction = {
+      id: "3",
+      kind: "delete",
+      telegramUserId: 777,
+      userId: "user_1",
+      chatId: 777,
+      transcript: null,
+      taskId: task.id,
+      before: { ...task, number: 3, title: "Buy something" },
+    };
+    const text = formatProposal(action, { header: "Confirm?", timeZone: "Asia/Yerevan" });
+    expect(text).toContain("I'm planning to delete this task:\n<b>#03 · Buy something</b>");
+    expect(text).toContain("Due: Thu 22 Oct, 09:00");
+    expect(text).toContain("This can't be undone.");
+  });
+
   it("lists the fields of a task to create", () => {
     const action: PendingAction = {
       id: "2",

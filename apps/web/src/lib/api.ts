@@ -24,3 +24,10 @@ export async function updateTaskStatus(id: string, status: TaskStatusValue): Pro
   const { task } = await parse<{ task: TaskDTO }>(response);
   return task;
 }
+
+/** Resolves when the task is gone, including when someone else already deleted it. */
+export async function deleteTask(id: string): Promise<void> {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (response.status === 404) return;
+  if (!response.ok) await parse(response);
+}

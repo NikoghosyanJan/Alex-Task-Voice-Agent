@@ -33,6 +33,7 @@ export interface TaskContext {
 export type MessagePlan =
   | { action: "create"; task: StructuredTask }
   | { action: "update"; taskNumber: number; changes: TaskChanges }
+  | { action: "delete"; taskNumber: number }
   | { action: "clarify"; message: string };
 
 export interface InterpretOptions {
@@ -57,9 +58,9 @@ export const MESSAGE_PLAN_JSON_SCHEMA = {
     reasoning: {
       type: "string",
       description:
-        "One or two sentences: does the message explicitly ask to change an existing task, and which tasks match (by number)?",
+        "One or two sentences: does the message explicitly ask to change or delete an existing task, and which tasks match (by number)?",
     },
-    action: { type: "string", enum: ["create", "update", "clarify"] },
+    action: { type: "string", enum: ["create", "update", "delete", "clarify"] },
     task: nullable(STRUCTURED_TASK_JSON_SCHEMA),
     taskNumber: { type: ["integer", "null"] },
     changes: nullable({
@@ -89,7 +90,7 @@ const rawChangesSchema = z.object({
 });
 
 const rawPlanSchema = z.object({
-  action: z.enum(["create", "update", "clarify"]),
+  action: z.enum(["create", "update", "delete", "clarify"]),
   task: z.unknown(),
   taskNumber: z.number().int().nullable(),
   changes: rawChangesSchema.nullable(),
@@ -142,6 +143,18 @@ export function normalizePlan(raw: unknown, tasks: readonly TaskContext[]): Mess
   if (action === "create") {
     const task = normalizeStructuredTask(parsed.data.task);
     return task ? { action, task } : null;
+  }
+
+  if (action === "delete") {
+    if (taskNumber === null) {
+      return clarify(
+        message || "Which task should I delete? You can refer to it by its number, e.g. #05.",
+      );
+    }
+    if (!tasks.some((task) => task.number === taskNumber)) {
+      return clarify(`I couldn't find task ${formatTaskNumber(taskNumber)} among your tasks.`);
+    }
+    return { action, taskNumber };
   }
 
   if (action === "update") {
@@ -227,16 +240,17 @@ export function buildSystemPrompt({
   const lines = [
     "You are the assistant behind a Telegram to-do bot. The user's message was typed or transcribed from voice.",
     "Decide what the user wants and answer with exactly one action. The user confirms your plan before anything happens.",
-    "Start with `reasoning`: note whether the message explicitly asks to change an existing task and list every task that could match.",
+    "Start with `reasoning`: note whether the message explicitly asks to change or delete an existing task and list every task that could match.",
     "- create: the message describes something to do. Fill `task`; taskNumber, changes and message are null.",
     "- update: the user wants to change ONE of their existing tasks (status, priority, title, description or due date). Set `taskNumber` and `changes`; task and message are null.",
-    "- clarify: it's unclear which task is meant, several tasks match, the request is something you can't do (deleting tasks, changing several tasks at once, questions), or it isn't about tasks. Put a short, friendly reply in `message`, written in the same language as the user's message (not the timezone's language). List candidate tasks when relevant, written like '#03 Call the dentist'.",
+    "- delete: the user explicitly asks to delete or remove ONE of their existing tasks. Set `taskNumber`; task, changes and message are null. Finishing a task is an update to COMPLETED, not a delete.",
+    "- clarify: it's unclear which task is meant, several tasks match, the request is something you can't do (changing or deleting several tasks at once, questions), or it isn't about tasks. Put a short, friendly reply in `message`, written in the same language as the user's message (not the timezone's language). List candidate tasks when relevant, written like '#03 Call the dentist'.",
     "",
     "Choosing between create and update:",
     "- Default to create. Choose update only when the message explicitly asks to change an existing task: it uses a verb like mark, move, change, set, rename, put, make, reopen, finish or postpone, or refers to a task number or 'this task'.",
     "- A new to-do that merely resembles an existing task's title is still a create.",
     "",
-    "Finding the task to update:",
+    "Finding the task to update or delete:",
     "- By number: '#5', 'task 5', 'number five', 'the fifth task' all mean number 5.",
     "- Otherwise match the title or description in the task list below. Words like 'this task' or 'it' refer to the message the user replied to, if any.",
     "- If more than one task could reasonably match, use clarify and list the matching tasks with their numbers. Never guess.",
