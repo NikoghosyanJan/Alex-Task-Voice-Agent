@@ -11,15 +11,20 @@ for (const candidate of [".env", "../../.env"]) {
   }
 }
 
+// Neon's pooled (pgbouncer) endpoint can't run migrations, so prefer the direct URL.
+const databaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+
+if (!databaseUrl && process.argv.includes("migrate")) {
+  throw new Error(
+    "DIRECT_URL / DATABASE_URL is not set. On Vercel, add both under Settings > Environment Variables for this environment.",
+  );
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations" },
   datasource: {
-    // Neon's pooled (pgbouncer) endpoint can't run migrations, so prefer the direct URL.
     // The placeholder lets `prisma generate` run in CI/Docker builds without a database.
-    url:
-      process.env.DIRECT_URL ??
-      process.env.DATABASE_URL ??
-      "postgresql://placeholder:placeholder@localhost:5432/placeholder",
+    url: databaseUrl ?? "postgresql://placeholder:placeholder@localhost:5432/placeholder",
   },
 });
