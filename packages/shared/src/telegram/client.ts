@@ -180,6 +180,21 @@ export class TelegramClient {
     return this.call<true>("setMyCommands", { commands });
   }
 
+  /** Display name shown in chats (the @username is set in BotFather and can't change here). */
+  setMyName(name: string): Promise<true> {
+    return this.call<true>("setMyName", { name });
+  }
+
+  /** Shown in the empty chat before the user presses Start. */
+  setMyDescription(description: string): Promise<true> {
+    return this.call<true>("setMyDescription", { description });
+  }
+
+  /** Shown on the bot's profile page and in shared links. */
+  setMyShortDescription(shortDescription: string): Promise<true> {
+    return this.call<true>("setMyShortDescription", { short_description: shortDescription });
+  }
+
   getMe(): Promise<{ id: number; username: string; first_name: string }> {
     return this.call("getMe");
   }

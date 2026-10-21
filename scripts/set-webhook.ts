@@ -1,5 +1,5 @@
 /**
- * Registers the Telegram webhook and bot commands.
+ * Registers the Telegram webhook, bot commands, and the bot's name and description.
  *
  *   pnpm set-webhook https://your-app.vercel.app   # or an ngrok URL
  *   pnpm set-webhook --info
@@ -7,6 +7,7 @@
  */
 import { config } from "dotenv";
 import { TelegramClient } from "../packages/shared/src/telegram/client";
+import { AGENT_NAME } from "../packages/shared/src/types";
 
 config({ quiet: true });
 
@@ -57,8 +58,17 @@ async function main() {
   await telegram.setMyCommands([
     { command: "tasks", description: "Show your latest tasks" },
     { command: "dashboard", description: "Open the live dashboard" },
-    { command: "help", description: "How to create tasks" },
+    { command: "help", description: `What ${AGENT_NAME} can do` },
   ]);
+  await telegram.setMyName(AGENT_NAME);
+  await telegram.setMyShortDescription(
+    `${AGENT_NAME}, your AI task assistant: text or voice in, tasks out.`,
+  );
+  await telegram.setMyDescription(
+    `Hi, I'm ${AGENT_NAME}! Send me a text or voice message and I'll turn it into a task. ` +
+      `You can also ask me to change or delete tasks, e.g. "put task 5 in progress". ` +
+      `I always show you my plan first and only act after you press Confirm.`,
+  );
 
   const me = await telegram.getMe();
   console.log(`Webhook set for @${me.username}: ${url}`);

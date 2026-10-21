@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
+import { AGENT_NAME } from "@taskbot/shared/types";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TaskBot Dashboard",
-  description: "Tasks created from Telegram text and voice messages, updated live.",
+  title: `${AGENT_NAME} · Task Dashboard`,
+  description: `Tasks ${AGENT_NAME} created from Telegram text and voice messages, updated live.`,
 };
 
 export const viewport: Viewport = {

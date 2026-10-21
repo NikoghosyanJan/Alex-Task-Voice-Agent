@@ -16,6 +16,7 @@ import {
   type TelegramUserInput,
 } from "@taskbot/jobs";
 import {
+  AGENT_NAME,
   errorDetails,
   formatTaskNumber,
   parseDate,
@@ -94,7 +95,7 @@ async function reply(deps: WebhookDeps, message: TgMessage, text: string): Promi
 function helpText(firstName: string | undefined, appUrl: string): string {
   const greeting = firstName ? `Hi ${escapeHtml(firstName)}!` : "Hi!";
   return [
-    `<b>${greeting} I turn your messages into tasks.</b>`,
+    `<b>${greeting} I'm ${AGENT_NAME}, your task assistant. I turn your messages into tasks.</b>`,
     "",
     "Send me a text or a voice message, for example:",
     '<i>"Call the dentist tomorrow at 10, it\'s urgent"</i>',

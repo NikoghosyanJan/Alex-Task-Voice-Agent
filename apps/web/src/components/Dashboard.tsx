@@ -4,6 +4,7 @@ import { RefreshCw, Send, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  AGENT_NAME,
   formatTaskNumber,
   STATUS_LABELS,
   TASK_STATUSES,
@@ -199,9 +200,9 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
             <Send className="size-5" aria-hidden />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">TaskBot</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{AGENT_NAME}</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Tasks from Telegram text and voice messages
+              Your AI task assistant for Telegram text and voice messages
             </p>
           </div>
         </div>
@@ -224,7 +225,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
               className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
             >
               <Send className="size-3.5" aria-hidden />
-              Open bot
+              Chat with {AGENT_NAME}
             </a>
           )}
         </div>
@@ -259,7 +260,7 @@ export function Dashboard({ initialTasks, botUsername, loadError }: Props) {
           <Send className="size-8 text-blue-500" aria-hidden />
           <h2 className="text-lg font-semibold">No tasks yet</h2>
           <p className="max-w-md text-sm text-slate-500 dark:text-slate-400">
-            Send a text or voice message to the bot and it will show up here instantly, e.g.
+            Send {AGENT_NAME} a text or voice message and the task will show up here instantly, e.g.
             &ldquo;Prepare the quarterly report by Friday, high priority&rdquo;.
           </p>
           {botLink && (

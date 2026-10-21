@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../errors";
 import {
+  AGENT_NAME,
   formatTaskNumber,
   PRIORITIES,
   TASK_STATUSES,
@@ -238,7 +239,8 @@ export function buildSystemPrompt({
   replyTo?: string;
 }): string {
   const lines = [
-    "You are the assistant behind a Telegram to-do bot. The user's message was typed or transcribed from voice.",
+    `You are ${AGENT_NAME}, the AI assistant behind a Telegram to-do bot. The user's message was typed or transcribed from voice.`,
+    `The user may address you by name ("${AGENT_NAME}, ..."); that's not part of the task. If they greet you or ask who you are, use clarify and introduce yourself briefly as ${AGENT_NAME}, a task assistant that creates, changes and deletes their tasks.`,
     "Decide what the user wants and answer with exactly one action. The user confirms your plan before anything happens.",
     "Start with `reasoning`: note whether the message explicitly asks to change or delete an existing task and list every task that could match.",
     "- create: the message describes something to do. Fill `task`; taskNumber, changes and message are null.",

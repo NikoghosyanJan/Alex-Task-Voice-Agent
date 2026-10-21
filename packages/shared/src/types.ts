@@ -3,6 +3,9 @@
  * Import via "@taskbot/shared/types" from React client components.
  */
 
+/** The assistant's name, used by the AI prompt, the bot's messages and the dashboard. */
+export const AGENT_NAME = "Alex";
+
 export const TASK_STATUSES = ["PENDING", "IN_PROGRESS", "COMPLETED"] as const;
 export type TaskStatusValue = (typeof TASK_STATUSES)[number];
 
